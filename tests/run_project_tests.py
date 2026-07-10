@@ -14,7 +14,11 @@ def run(command: list[str]) -> int:
 
 
 def main() -> int:
-    return run([sys.executable, "tests/run_persistence_tests.py"])
+    persistence_result = run([sys.executable, "tests/run_persistence_tests.py"])
+    if persistence_result != 0:
+        return persistence_result
+
+    return run([sys.executable, "tests/run_dirty_save_tests.py"])
 
 
 if __name__ == "__main__":

@@ -311,11 +311,14 @@ def check_player_removing_order(game_server: str) -> None:
         return
 
     release_index = body.find("DataManager.ReleaseProfile(player)")
+    dirty_guard_release_index = body.find("releaseProfileWithDirtyGuard(player, \"PlayerRemoving\")")
+    if release_index == -1 or (dirty_guard_release_index != -1 and dirty_guard_release_index < release_index):
+        release_index = dirty_guard_release_index
     chest_nil_index = body.find("playerChestStates[userId] = nil")
     quest_nil_index = body.find("playerQuestStates[userId] = nil")
 
     if release_index == -1:
-        fail("PlayerRemoving order", "PlayerRemoving does not call DataManager.ReleaseProfile(player).", GAME_SERVER)
+        fail("PlayerRemoving order", "PlayerRemoving does not call DataManager.ReleaseProfile(player) or releaseProfileWithDirtyGuard().", GAME_SERVER)
         return
 
     if chest_nil_index == -1 or quest_nil_index == -1:
