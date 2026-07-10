@@ -962,7 +962,7 @@ local function trySaveDirtyPlayer(player, source, force)
 	end
 
 	state.IsDirty = true
-	state.DirtyReason = reasons
+	state.DirtyReason = formatDirtyReasons(state)
 	warn("[DirtySave] Failed userId=" .. tostring(player.UserId) .. " error=" .. tostring(savedOrError))
 
 	return false, savedOrError
@@ -1992,23 +1992,8 @@ for _, player in ipairs(Players:GetPlayers()) do
 	end)
 end
 
-Players.PlayerRemoving:Connect(function(player)
+local function clearPlayerRuntimeState(player)
 	local userId = player.UserId
-
-	flushQueuedAdminSaveBeforeRelease(player)
-
-	local success, result = releaseProfileWithDirtyGuard(player, "PlayerRemoving")
-
-	if not success and result == "SAVE_IN_PROGRESS" then
-		waitForDirtySave(player, 10)
-		success, result = releaseProfileWithDirtyGuard(player, "PlayerRemovingRetryAfterSave")
-	end
-
-	if not success then
-		warn("[GameServer] ReleaseProfile error:", player.Name, result)
-	elseif not result then
-		warn("[GameServer] ReleaseProfile returned false:", player.Name)
-	end
 
 	playerLoadStarted[userId] = nil
 	rollDebounce[userId] = nil
@@ -2033,6 +2018,42 @@ Players.PlayerRemoving:Connect(function(player)
 	playerQuestStates[userId] = nil
 	playerChestStates[userId] = nil
 	dirtySaveStates[userId] = nil
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	flushQueuedAdminSaveBeforeRelease(player)
+
+	local success, result = releaseProfileWithDirtyGuard(player, "PlayerRemoving")
+
+	if not success and result == "SAVE_IN_PROGRESS" then
+		waitForDirtySave(player, 10)
+		success, result = releaseProfileWithDirtyGuard(player, "PlayerRemovingRetryAfterSave")
+	end
+
+	if not success and result == "SAVE_IN_PROGRESS" then
+		warn("[GameServer] ReleaseProfile deferred until active save finishes:", player.Name)
+		task.spawn(function()
+			waitForDirtySave(player, 15)
+
+			local deferredSuccess, deferredResult = releaseProfileWithDirtyGuard(player, "PlayerRemovingDeferredRelease")
+			if not deferredSuccess then
+				warn("[GameServer][CRITICAL] Deferred ReleaseProfile error:", player.Name, deferredResult)
+			elseif not deferredResult then
+				warn("[GameServer][CRITICAL] Deferred ReleaseProfile returned false:", player.Name)
+			end
+
+			clearPlayerRuntimeState(player)
+		end)
+		return
+	end
+
+	if not success then
+		warn("[GameServer] ReleaseProfile error:", player.Name, result)
+	elseif not result then
+		warn("[GameServer] ReleaseProfile returned false:", player.Name)
+	end
+
+	clearPlayerRuntimeState(player)
 end)
 
 task.spawn(function()

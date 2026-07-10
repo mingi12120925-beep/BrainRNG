@@ -84,6 +84,7 @@ def check_dirty_state_shape(game_server: str) -> None:
             "local dirtySaveStates = {}",
             "IsDirty = false",
             "DirtyReason = nil",
+            "DirtyRevision = 0",
             "LastDirtyAt = 0",
             "LastSaveAttemptAt = 0",
             "SaveInProgress = false",
@@ -104,6 +105,7 @@ def check_mark_player_dirty(game_server: str) -> None:
             "state.IsDirty = true",
             "state.DirtyReasons[reason] = true",
             "state.DirtyReason = formatDirtyReasons(state)",
+            "state.DirtyRevision += 1",
             "state.LastDirtyAt = os.clock()",
             "[DirtySave] Mark userId=",
         ],
@@ -124,6 +126,8 @@ def check_save_success_and_failure(game_server: str) -> None:
                 "state.IsDirty = false",
                 "state.DirtyReason = nil",
                 "state.DirtyReasons = {}",
+                "savedRevision ~= nil and state.DirtyRevision ~= savedRevision",
+                "[DirtySave] KeepDirty userId=",
             ],
         )
 
@@ -136,7 +140,8 @@ def check_save_success_and_failure(game_server: str) -> None:
         save_body,
         [
             "if success and savedOrError then",
-            "clearPlayerDirty(player)",
+            "local saveRevision = state.DirtyRevision",
+            "clearPlayerDirty(player, tostring(source or \"DirtyLoop\"), saveRevision)",
             "[DirtySave] OK userId=",
         ],
     )
@@ -146,7 +151,7 @@ def check_save_success_and_failure(game_server: str) -> None:
         save_body,
         [
             "state.IsDirty = true",
-            "state.DirtyReason = reasons",
+            "state.DirtyReason = formatDirtyReasons(state)",
             "[DirtySave] Failed userId=",
         ],
     )
@@ -172,6 +177,8 @@ def check_duplicate_save_guard(game_server: str) -> None:
         release_body,
         [
             "waitForDirtySave(player, 5)",
+            "return false, \"SAVE_IN_PROGRESS\"",
+            "[DirtySave] Release blocked by active save userId=",
             "state.SaveInProgress = true",
             "state.SaveInProgress = false",
         ],
@@ -218,9 +225,9 @@ def check_important_event_saves(game_server: str) -> None:
         [
             "safeSaveImportantEvent(player, \"QuestClaim\")",
             "safeSaveImportantEvent(player, \"ChestOpen\")",
-            "clearPlayerDirty(player, \"LuckUpgrade\")",
-            "clearPlayerDirty(player, \"AutoRollUpgrade\")",
-            "clearPlayerDirty(player, \"WinPad\")",
+            "saveProfileWithDirtyGuard(player, \"LuckUpgrade\")",
+            "saveProfileWithDirtyGuard(player, \"AutoRollUpgrade\")",
+            "saveProfileWithDirtyGuard(player, \"WinPad\")",
             "return DataManager.SaveProfile(player, false",
             "return DataManager.ReleaseProfile(player)",
         ],
@@ -253,6 +260,17 @@ def check_player_removing_order(game_server: str) -> None:
     if early:
         fail("PlayerRemoving order", "State cleared before ReleaseProfile: " + ", ".join(early))
 
+    require_contains(
+        "PlayerRemoving active save deferral",
+        body,
+        [
+            "result == \"SAVE_IN_PROGRESS\"",
+            "releaseProfileWithDirtyGuard(player, \"PlayerRemovingRetryAfterSave\")",
+            "releaseProfileWithDirtyGuard(player, \"PlayerRemovingDeferredRelease\")",
+            "clearPlayerRuntimeState(player)",
+        ],
+    )
+
 
 def check_bind_to_close(game_server: str) -> None:
     require_contains(
@@ -278,6 +296,66 @@ def check_data_version(data_manager: str) -> None:
     )
 
 
+class DirtyStateModel:
+    def __init__(self) -> None:
+        self.is_dirty = False
+        self.dirty_reasons: set[str] = set()
+        self.dirty_revision = 0
+        self.save_in_progress = False
+
+    def mark_dirty(self, reason: str) -> None:
+        self.is_dirty = True
+        self.dirty_reasons.add(reason)
+        self.dirty_revision += 1
+
+    def begin_save(self) -> int:
+        if self.save_in_progress:
+            raise RuntimeError("SAVE_IN_PROGRESS")
+        self.save_in_progress = True
+        return self.dirty_revision
+
+    def finish_success(self, saved_revision: int) -> None:
+        self.save_in_progress = False
+        if self.dirty_revision == saved_revision:
+            self.is_dirty = False
+            self.dirty_reasons.clear()
+        else:
+            self.is_dirty = True
+
+    def finish_failure(self) -> None:
+        self.save_in_progress = False
+        self.is_dirty = True
+
+
+def check_dirty_revision_scenarios() -> None:
+    state = DirtyStateModel()
+    state.mark_dirty("RollIQ")
+    saved_revision = state.begin_save()
+    state.finish_success(saved_revision)
+
+    if state.is_dirty:
+        fail("DirtyRevision success scenario", "Dirty should clear when no changes occur during save.")
+
+    state.mark_dirty("RollIQ")
+    saved_revision = state.begin_save()
+    state.mark_dirty("RollIQ")
+    state.finish_success(saved_revision)
+
+    if not state.is_dirty:
+        fail("DirtyRevision save-during-roll scenario", "Dirty was cleared even though Roll occurred during save.")
+
+    if state.dirty_revision <= saved_revision:
+        fail("DirtyRevision save-during-roll scenario", "DirtyRevision did not advance for Roll during save.")
+
+    state.save_in_progress = True
+    try:
+        state.begin_save()
+    except RuntimeError:
+        pass
+    else:
+        fail("DirtyRevision duplicate save scenario", "Duplicate save was allowed while SaveInProgress was true.")
+
+
 def main() -> int:
     game_server = read_text(GAME_SERVER)
     data_manager = read_text(DATA_MANAGER)
@@ -291,6 +369,7 @@ def main() -> int:
     check_player_removing_order(game_server)
     check_bind_to_close(game_server)
     check_data_version(data_manager)
+    check_dirty_revision_scenarios()
 
     if failures:
         for failure in failures:

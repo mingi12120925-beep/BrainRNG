@@ -321,6 +321,14 @@ def check_player_removing_order(game_server: str) -> None:
         fail("PlayerRemoving order", "PlayerRemoving does not call DataManager.ReleaseProfile(player) or releaseProfileWithDirtyGuard().", GAME_SERVER)
         return
 
+    cleanup_body = get_lua_function_body(game_server, "clearPlayerRuntimeState")
+    cleanup_call_index = body.find("clearPlayerRuntimeState(player)")
+    if (chest_nil_index == -1 or quest_nil_index == -1) and cleanup_call_index != -1:
+        if "playerChestStates[userId] = nil" in cleanup_body:
+            chest_nil_index = cleanup_call_index
+        if "playerQuestStates[userId] = nil" in cleanup_body:
+            quest_nil_index = cleanup_call_index
+
     if chest_nil_index == -1 or quest_nil_index == -1:
         fail("PlayerRemoving cleanup", "PlayerRemoving must clean chest and quest state after release.", GAME_SERVER)
         return
