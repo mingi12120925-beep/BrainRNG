@@ -332,6 +332,16 @@ end
 createLoadingScreen()
 
 local remotesFolder = ReplicatedStorage:WaitForChild("Remotes")
+local PlayerDataReady = remotesFolder:WaitForChild("PlayerDataReady")
+
+PlayerDataReady.OnClientEvent:Connect(function()
+	task.spawn(completeLoadingScreen)
+end)
+
+if player:GetAttribute("DataReady") == true then
+	task.spawn(completeLoadingScreen)
+end
+
 local RollRequest = remotesFolder:WaitForChild("RollRequest")
 local UpgradeRequest = remotesFolder:WaitForChild("UpgradeRequest")
 local AutoRollUpgradeRequest = remotesFolder:WaitForChild("AutoRollUpgradeRequest")
@@ -344,11 +354,6 @@ local NextAreaRequest = remotesFolder:WaitForChild("NextAreaRequest")
 local ReturnToLobbyRequest = remotesFolder:WaitForChild("ReturnToLobbyRequest")
 local UpdateStats = remotesFolder:WaitForChild("UpdateStats")
 local PopupEvent = remotesFolder:WaitForChild("PopupEvent")
-local PlayerDataReady = remotesFolder:WaitForChild("PlayerDataReady")
-
-PlayerDataReady.OnClientEvent:Connect(function()
-	task.spawn(completeLoadingScreen)
-end)
 
 local stats = {
 	IQ = 0,

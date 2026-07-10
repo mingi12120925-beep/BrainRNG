@@ -64,6 +64,8 @@ def check_server_ready_signal(game_server: str) -> None:
         game_server,
         [
             "local PlayerDataReady = getOrCreateRemoteEvent(\"PlayerDataReady\")",
+            "player:SetAttribute(\"DataReady\", false)",
+            "player:SetAttribute(\"DataReady\", true)",
             "PlayerDataReady:FireClient(player)",
             "[Loading] PlayerDataReady sent player=",
         ],
@@ -78,15 +80,21 @@ def check_server_ready_signal(game_server: str) -> None:
     setup_index = body.find("GameLogic.SetupPlayer(player)")
     load_index = body.find("local loaded = DataManager.LoadProfile(player)")
     update_index = body.find("updateAllStats(player)")
+    ready_attribute_index = body.find("player:SetAttribute(\"DataReady\", true)")
     ready_index = body.find("PlayerDataReady:FireClient(player)")
     kick_index = body.find("player:Kick(loadError)")
+    false_attribute_index = body.find("player:SetAttribute(\"DataReady\", false)")
 
-    if min(setup_index, load_index, update_index, ready_index, kick_index) == -1:
+    if min(setup_index, load_index, update_index, ready_attribute_index, ready_index, kick_index, false_attribute_index) == -1:
         fail("PlayerDataReady order", "Missing expected load/update/ready statements.", GAME_SERVER)
         return
 
-    if not (setup_index < load_index < update_index < ready_index):
-        fail("PlayerDataReady order", "PlayerDataReady must be sent after SetupPlayer, LoadProfile, and updateAllStats.", GAME_SERVER)
+    if not (false_attribute_index < setup_index < load_index < update_index < ready_attribute_index < ready_index):
+        fail(
+            "PlayerDataReady order",
+            "DataReady false, SetupPlayer, LoadProfile, updateAllStats, DataReady true, and FireClient must run in order.",
+            GAME_SERVER,
+        )
 
     if not (load_index < kick_index < update_index):
         fail("PlayerDataReady failure path", "LoadProfile failure must kick and return before PlayerDataReady.", GAME_SERVER)
@@ -111,6 +119,7 @@ def check_loading_gui(ui_controller: str) -> None:
             "local PlayerDataReady = remotesFolder:WaitForChild(\"PlayerDataReady\")",
             "PlayerDataReady.OnClientEvent:Connect(function()",
             "task.spawn(completeLoadingScreen)",
+            "if player:GetAttribute(\"DataReady\") == true then",
         ],
         UI_CONTROLLER,
     )
@@ -206,6 +215,28 @@ def check_loading_finish_requires_ready_signal(ui_controller: str) -> None:
     remotes_index = ui_controller.find("local remotesFolder = ReplicatedStorage:WaitForChild(\"Remotes\")")
     if create_index == -1 or remotes_index == -1 or create_index > remotes_index:
         fail("Immediate loading screen", "Loading screen must be created before waiting for Remotes.", UI_CONTROLLER)
+
+    player_data_ready_index = ui_controller.find("local PlayerDataReady = remotesFolder:WaitForChild(\"PlayerDataReady\")")
+    player_data_ready_connection_index = ui_controller.find("PlayerDataReady.OnClientEvent:Connect(function()")
+    data_ready_attribute_index = ui_controller.find("if player:GetAttribute(\"DataReady\") == true then")
+    general_remote_indices = [
+        ui_controller.find("local RollRequest = remotesFolder:WaitForChild(\"RollRequest\")"),
+        ui_controller.find("local UpgradeRequest = remotesFolder:WaitForChild(\"UpgradeRequest\")"),
+        ui_controller.find("local UpdateStats = remotesFolder:WaitForChild(\"UpdateStats\")"),
+        ui_controller.find("local PopupEvent = remotesFolder:WaitForChild(\"PopupEvent\")"),
+    ]
+
+    if -1 in [player_data_ready_index, player_data_ready_connection_index, data_ready_attribute_index] or any(index == -1 for index in general_remote_indices):
+        fail("PlayerDataReady early hookup", "Missing PlayerDataReady early hookup or general remote waits.", UI_CONTROLLER)
+        return
+
+    first_general_remote_index = min(general_remote_indices)
+    if not (remotes_index < player_data_ready_index < player_data_ready_connection_index < data_ready_attribute_index < first_general_remote_index):
+        fail(
+            "PlayerDataReady early hookup",
+            "PlayerDataReady connection and DataReady attribute check must happen before general RemoteEvent WaitForChild calls.",
+            UI_CONTROLLER,
+        )
 
 
 def check_data_version(data_manager: str) -> None:

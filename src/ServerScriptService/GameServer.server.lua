@@ -1967,6 +1967,7 @@ local function handlePlayerAdded(player)
 	end
 
 	playerLoadStarted[player.UserId] = true
+	player:SetAttribute("DataReady", false)
 
 	print("[GameServer] Player profile loading:", player.Name, player.UserId)
 
@@ -1983,6 +1984,7 @@ local function handlePlayerAdded(player)
 	print("[GameServer] Player profile loaded:", player.Name, player.UserId)
 
 	updateAllStats(player)
+	player:SetAttribute("DataReady", true)
 	PlayerDataReady:FireClient(player)
 	print("[Loading] PlayerDataReady sent player=" .. tostring(player.Name))
 end
