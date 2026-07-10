@@ -86,6 +86,7 @@ local NextAreaRequest = getOrCreateRemoteEvent("NextAreaRequest")
 local ReturnToLobbyRequest = getOrCreateRemoteEvent("ReturnToLobbyRequest")
 local UpdateStats = getOrCreateRemoteEvent("UpdateStats")
 local PopupEvent = getOrCreateRemoteEvent("PopupEvent")
+local PlayerDataReady = getOrCreateRemoteEvent("PlayerDataReady")
 
 local rollDebounce = {}
 local winPadDebounce = {}
@@ -1982,6 +1983,8 @@ local function handlePlayerAdded(player)
 	print("[GameServer] Player profile loaded:", player.Name, player.UserId)
 
 	updateAllStats(player)
+	PlayerDataReady:FireClient(player)
+	print("[Loading] PlayerDataReady sent player=" .. tostring(player.Name))
 end
 
 Players.PlayerAdded:Connect(handlePlayerAdded)

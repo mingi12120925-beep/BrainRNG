@@ -23,6 +23,313 @@ local CHEST_CREAK_VOLUME = 2.5
 local LOCAL_ADMIN_USERNAME = "ming861212"
 local DEBUG_UI = false
 local DEBUG_TUTORIAL = false
+local MIN_LOADING_TIME = 1.2
+local MAX_LOADING_TIME = 12
+local FADE_OUT_TIME = 0.35
+
+local loadingStartedAt = os.clock()
+local loadingReadyReceived = false
+local loadingFinished = false
+local loadingGui = nil
+local loadingProgressFill = nil
+local loadingStatusLabel = nil
+local loadingTitle = nil
+local loadingGlowLeft = nil
+local loadingGlowRight = nil
+
+local function addLoadingCorner(parent, radius)
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = radius
+	corner.Parent = parent
+	return corner
+end
+
+local function addLoadingTextConstraint(parent, minSize, maxSize)
+	local constraint = Instance.new("UITextSizeConstraint")
+	constraint.MinTextSize = minSize
+	constraint.MaxTextSize = maxSize
+	constraint.Parent = parent
+	return constraint
+end
+
+local function tweenLoadingProgress(targetScale, duration)
+	if not loadingProgressFill or loadingFinished then
+		return
+	end
+
+	targetScale = math.clamp(tonumber(targetScale) or 0, 0.06, 1)
+	TweenService:Create(
+		loadingProgressFill,
+		TweenInfo.new(duration or 0.35, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+		{ Size = UDim2.fromScale(targetScale, 1) }
+	):Play()
+end
+
+local function createLoadingScreen()
+	local existing = playerGui:FindFirstChild("BrainRNG_LoadingGui")
+	if existing then
+		existing:Destroy()
+	end
+
+	loadingGui = Instance.new("ScreenGui")
+	loadingGui.Name = "BrainRNG_LoadingGui"
+	loadingGui.IgnoreGuiInset = true
+	loadingGui.ResetOnSpawn = false
+	loadingGui.DisplayOrder = 10000
+	loadingGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+	loadingGui.Enabled = true
+	loadingGui.Parent = playerGui
+
+	local background = Instance.new("Frame")
+	background.Name = "LoadingBackground"
+	background.Size = UDim2.fromScale(1, 1)
+	background.Position = UDim2.fromScale(0, 0)
+	background.BackgroundColor3 = Color3.fromRGB(12, 17, 30)
+	background.BorderSizePixel = 0
+	background.ZIndex = 100
+	background.Parent = loadingGui
+
+	loadingGlowLeft = Instance.new("Frame")
+	loadingGlowLeft.Name = "GlowLeft"
+	loadingGlowLeft.AnchorPoint = Vector2.new(0.5, 0.5)
+	loadingGlowLeft.Position = UDim2.fromScale(0.22, 0.38)
+	loadingGlowLeft.Size = UDim2.fromOffset(420, 420)
+	loadingGlowLeft.BackgroundColor3 = Color3.fromRGB(64, 120, 255)
+	loadingGlowLeft.BackgroundTransparency = 0.82
+	loadingGlowLeft.BorderSizePixel = 0
+	loadingGlowLeft.ZIndex = 101
+	loadingGlowLeft.Parent = background
+	addLoadingCorner(loadingGlowLeft, UDim.new(1, 0))
+
+	loadingGlowRight = Instance.new("Frame")
+	loadingGlowRight.Name = "GlowRight"
+	loadingGlowRight.AnchorPoint = Vector2.new(0.5, 0.5)
+	loadingGlowRight.Position = UDim2.fromScale(0.68, 0.52)
+	loadingGlowRight.Size = UDim2.fromOffset(360, 360)
+	loadingGlowRight.BackgroundColor3 = Color3.fromRGB(137, 84, 255)
+	loadingGlowRight.BackgroundTransparency = 0.86
+	loadingGlowRight.BorderSizePixel = 0
+	loadingGlowRight.ZIndex = 101
+	loadingGlowRight.Parent = background
+	addLoadingCorner(loadingGlowRight, UDim.new(1, 0))
+
+	loadingTitle = Instance.new("TextLabel")
+	loadingTitle.Name = "GameTitle"
+	loadingTitle.AnchorPoint = Vector2.new(0.5, 0.5)
+	loadingTitle.Position = UDim2.fromScale(0.5, 0.39)
+	loadingTitle.Size = UDim2.fromScale(0.75, 0.13)
+	loadingTitle.BackgroundTransparency = 1
+	loadingTitle.Text = "BRAIN RNG"
+	loadingTitle.Font = Enum.Font.GothamBlack
+	loadingTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+	loadingTitle.TextScaled = true
+	loadingTitle.TextStrokeColor3 = Color3.fromRGB(50, 85, 180)
+	loadingTitle.TextStrokeTransparency = 0.35
+	loadingTitle.ZIndex = 103
+	loadingTitle.Parent = background
+	addLoadingTextConstraint(loadingTitle, 34, 72)
+
+	local subtitle = Instance.new("TextLabel")
+	subtitle.Name = "Subtitle"
+	subtitle.AnchorPoint = Vector2.new(0.5, 0.5)
+	subtitle.Position = UDim2.fromScale(0.5, 0.49)
+	subtitle.Size = UDim2.fromScale(0.8, 0.05)
+	subtitle.BackgroundTransparency = 1
+	subtitle.Text = "ROLL. LEARN. EVOLVE."
+	subtitle.Font = Enum.Font.GothamMedium
+	subtitle.TextColor3 = Color3.fromRGB(162, 191, 255)
+	subtitle.TextScaled = true
+	subtitle.ZIndex = 103
+	subtitle.Parent = background
+	addLoadingTextConstraint(subtitle, 14, 24)
+
+	local progressBackground = Instance.new("Frame")
+	progressBackground.Name = "ProgressBarBackground"
+	progressBackground.AnchorPoint = Vector2.new(0.5, 0.5)
+	progressBackground.Position = UDim2.fromScale(0.5, 0.66)
+	progressBackground.Size = UDim2.fromScale(0.42, 0.018)
+	progressBackground.BackgroundColor3 = Color3.fromRGB(39, 47, 68)
+	progressBackground.BorderSizePixel = 0
+	progressBackground.ZIndex = 103
+	progressBackground.Parent = background
+	addLoadingCorner(progressBackground, UDim.new(1, 0))
+
+	local progressSizeConstraint = Instance.new("UISizeConstraint")
+	progressSizeConstraint.MinSize = Vector2.new(230, 10)
+	progressSizeConstraint.MaxSize = Vector2.new(520, 20)
+	progressSizeConstraint.Parent = progressBackground
+
+	loadingProgressFill = Instance.new("Frame")
+	loadingProgressFill.Name = "ProgressFill"
+	loadingProgressFill.Size = UDim2.fromScale(0.06, 1)
+	loadingProgressFill.BackgroundColor3 = Color3.fromRGB(90, 155, 255)
+	loadingProgressFill.BorderSizePixel = 0
+	loadingProgressFill.ZIndex = 104
+	loadingProgressFill.Parent = progressBackground
+	addLoadingCorner(loadingProgressFill, UDim.new(1, 0))
+
+	loadingStatusLabel = Instance.new("TextLabel")
+	loadingStatusLabel.Name = "LoadingStatus"
+	loadingStatusLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+	loadingStatusLabel.Position = UDim2.fromScale(0.5, 0.71)
+	loadingStatusLabel.Size = UDim2.fromScale(0.65, 0.045)
+	loadingStatusLabel.BackgroundTransparency = 1
+	loadingStatusLabel.Text = "Loading player data..."
+	loadingStatusLabel.Font = Enum.Font.GothamMedium
+	loadingStatusLabel.TextColor3 = Color3.fromRGB(205, 216, 240)
+	loadingStatusLabel.TextScaled = true
+	loadingStatusLabel.ZIndex = 103
+	loadingStatusLabel.Parent = background
+	addLoadingTextConstraint(loadingStatusLabel, 14, 22)
+
+	print("[Loading] Screen shown")
+
+	TweenService:Create(
+		loadingTitle,
+		TweenInfo.new(1.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+		{ Position = UDim2.new(0.5, 0, 0.39, 5) }
+	):Play()
+
+	TweenService:Create(
+		loadingGlowLeft,
+		TweenInfo.new(1.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+		{ BackgroundTransparency = 0.9 }
+	):Play()
+	TweenService:Create(
+		loadingGlowRight,
+		TweenInfo.new(2.1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+		{ BackgroundTransparency = 0.78 }
+	):Play()
+
+	task.spawn(function()
+		local statuses = {
+			"Loading player data...",
+			"Preparing concepts...",
+			"Building your school...",
+			"Almost ready...",
+		}
+		local index = 1
+
+		while loadingGui and loadingGui.Parent and not loadingReadyReceived do
+			if loadingStatusLabel then
+				loadingStatusLabel.Text = statuses[index]
+			end
+			index = (index % #statuses) + 1
+			task.wait(0.8)
+		end
+	end)
+
+	task.spawn(function()
+		local stages = {
+			{ Delay = 0, Progress = 0.06 },
+			{ Delay = 0.5, Progress = 0.22 },
+			{ Delay = 1.5, Progress = 0.48 },
+			{ Delay = 3, Progress = 0.72 },
+			{ Delay = MAX_LOADING_TIME, Progress = 0.88 },
+		}
+
+		local lastDelay = 0
+		for _, stage in ipairs(stages) do
+			if loadingReadyReceived or loadingFinished then
+				return
+			end
+
+			local waitTime = math.max(0, stage.Delay - lastDelay)
+			lastDelay = stage.Delay
+			if waitTime > 0 then
+				task.wait(waitTime)
+			end
+
+			if loadingReadyReceived or loadingFinished then
+				return
+			end
+
+			tweenLoadingProgress(stage.Progress, 0.45)
+
+			if stage.Delay == MAX_LOADING_TIME and loadingStatusLabel then
+				loadingStatusLabel.Text = "Still loading..."
+				task.wait(0.8)
+				if not loadingReadyReceived and loadingStatusLabel then
+					loadingStatusLabel.Text = "Please wait a moment."
+				end
+			end
+		end
+
+		task.wait(3)
+		if not loadingReadyReceived and loadingStatusLabel then
+			loadingStatusLabel.Text = "Loading is taking longer than expected."
+		end
+	end)
+end
+
+local function fadeOutLoadingScreen()
+	if loadingFinished then
+		return
+	end
+
+	loadingFinished = true
+	if not loadingGui or not loadingGui.Parent then
+		return
+	end
+
+	local background = loadingGui:FindFirstChild("LoadingBackground")
+	if background then
+		for _, descendant in ipairs(background:GetDescendants()) do
+			if descendant:IsA("TextLabel") then
+				TweenService:Create(descendant, TweenInfo.new(FADE_OUT_TIME), {
+					TextTransparency = 1,
+					TextStrokeTransparency = 1,
+					BackgroundTransparency = 1,
+				}):Play()
+			elseif descendant:IsA("Frame") then
+				TweenService:Create(descendant, TweenInfo.new(FADE_OUT_TIME), {
+					BackgroundTransparency = 1,
+				}):Play()
+			elseif descendant:IsA("UIStroke") then
+				TweenService:Create(descendant, TweenInfo.new(FADE_OUT_TIME), {
+					Transparency = 1,
+				}):Play()
+			end
+		end
+
+		TweenService:Create(background, TweenInfo.new(FADE_OUT_TIME), {
+			BackgroundTransparency = 1,
+		}):Play()
+	end
+
+	task.wait(FADE_OUT_TIME)
+
+	if loadingGui then
+		loadingGui:Destroy()
+		loadingGui = nil
+	end
+
+	print("[Loading] Fade out complete")
+end
+
+local function completeLoadingScreen()
+	if loadingReadyReceived then
+		return
+	end
+
+	loadingReadyReceived = true
+	print("[Loading] PlayerDataReady received")
+
+	if loadingStatusLabel then
+		loadingStatusLabel.Text = "Ready!"
+	end
+	tweenLoadingProgress(1, 0.18)
+
+	local elapsed = os.clock() - loadingStartedAt
+	if elapsed < MIN_LOADING_TIME then
+		task.wait(MIN_LOADING_TIME - elapsed)
+	end
+
+	task.wait(0.15)
+	fadeOutLoadingScreen()
+end
+
+createLoadingScreen()
 
 local remotesFolder = ReplicatedStorage:WaitForChild("Remotes")
 local RollRequest = remotesFolder:WaitForChild("RollRequest")
@@ -37,6 +344,11 @@ local NextAreaRequest = remotesFolder:WaitForChild("NextAreaRequest")
 local ReturnToLobbyRequest = remotesFolder:WaitForChild("ReturnToLobbyRequest")
 local UpdateStats = remotesFolder:WaitForChild("UpdateStats")
 local PopupEvent = remotesFolder:WaitForChild("PopupEvent")
+local PlayerDataReady = remotesFolder:WaitForChild("PlayerDataReady")
+
+PlayerDataReady.OnClientEvent:Connect(function()
+	task.spawn(completeLoadingScreen)
+end)
 
 local stats = {
 	IQ = 0,
