@@ -108,16 +108,13 @@ def check_functional_names(builder: str, game_server: str) -> None:
             '"WorldChestModel"',
             '"ChestPromptPart"',
             '"ChestOpenPrompt"',
-            '"ChestStatusBillboard"',
             '"ChestReadyIcon"',
             '"ProfessorBrain_Body"',
             '"QuestOpenPrompt"',
-            '"QuestStatusBillboard"',
             '"QuestReadyIcon"',
             '"NextAreaGate"',
             '"NextAreaGate_Door"',
             '"NextAreaPrompt"',
-            '"NextAreaGateBillboard"',
             '"NextAreaGateTitle"',
             '"NextAreaGateSubtitle"',
             '"NextAreaLockIcon"',
@@ -151,8 +148,9 @@ def check_visual_policy(builder: str) -> None:
         builder,
         [
             '"BRAIN RNG SCHOOL"',
-            '"ROLL IQ"',
-            '"TAP TO GROW"',
+            "ROLL IQ",
+            "TAP TO GROW",
+            '"P0_RollPedestal_FixedSign"',
             '"QUESTS\\nHOMEWORK BOARD',
             '"KNOWLEDGE CHESTS\\nBASIC OPEN',
             '"RESEARCH\\nCONCEPT INDEX',
@@ -161,6 +159,9 @@ def check_visual_policy(builder: str) -> None:
             '"DAILY ATTENDANCE\\nCOMING SOON"',
             '"ELEMENTARY SCHOOL"',
             '"REQUIRED IQ 80.500"',
+            '"P0_GateFixedSign"',
+            '"P0_Area2ReturnFixedSign"',
+            '"RETURN TO LOBBY"',
         ],
     )
 
@@ -176,6 +177,42 @@ def check_visual_policy(builder: str) -> None:
     found = [needle for needle in forbidden if needle in builder]
     if found:
         fail("Greybox removed", "Old greybox/legacy map strings remain: " + ", ".join(found))
+
+    for forbidden_billboard in [
+        'Instance.new("BillboardGui")',
+        "BillboardGui",
+        "RollButtonBillboard",
+        "QuestStatusBillboard",
+        "ChestStatusBillboard",
+        "NextAreaGateBillboard",
+        "Area2ReturnBillboard",
+    ]:
+        if forbidden_billboard in builder:
+            fail("Floating map UI removed", f"SimpleWorldBuilder.lua still contains {forbidden_billboard!r}.")
+
+    require_contains(
+        "Fixed SurfaceGui signs",
+        builder,
+        [
+            'Instance.new("SurfaceGui")',
+            '"P0_RollPedestal_FixedSign"',
+            '"QuestBoardText"',
+            '"P0_ChestSign"',
+            '"NextAreaGateSurfaceGui"',
+            '"P0_Area2ReturnFixedSign"',
+        ],
+    )
+
+    require_contains(
+        "Prompts retained",
+        builder,
+        [
+            '"QuestOpenPrompt"',
+            '"ChestOpenPrompt"',
+            '"NextAreaPrompt"',
+            '"Area2ReturnPrompt"',
+        ],
+    )
 
 
 def check_lighting_and_performance(builder: str) -> None:

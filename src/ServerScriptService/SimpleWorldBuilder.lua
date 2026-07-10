@@ -109,78 +109,47 @@ local function sign(parent, name, text, position, size, color, orientation)
 	return item
 end
 
-local function billboard(parent, name, title, subtitle, accentColor, offset)
-	local gui = Instance.new("BillboardGui")
-	gui.Name = name
-	gui.AlwaysOnTop = false
-	gui.MaxDistance = 120
-	gui.Size = UDim2.new(0, 240, 0, 82)
-	gui.StudsOffset = offset or Vector3.new(0, 5, 0)
-	gui.Parent = parent
+local function gateSurfaceSign(parent, name, position)
+	local item = part(parent, name, Vector3.new(28, 6, 0.5), position, {
+		Color = COLORS.DarkText,
+		Material = Enum.Material.SmoothPlastic,
+		Decorative = true,
+	})
 
-	local frame = Instance.new("Frame")
-	frame.Name = "StatusFrame"
-	frame.BackgroundColor3 = Color3.fromRGB(18, 24, 34)
-	frame.BackgroundTransparency = 0.08
-	frame.BorderSizePixel = 0
-	frame.Size = UDim2.fromScale(1, 1)
-	frame.Parent = gui
+	local gui = Instance.new("SurfaceGui")
+	gui.Name = "NextAreaGateSurfaceGui"
+	gui.Face = Enum.NormalId.Front
+	gui.LightInfluence = 0.15
+	gui.PixelsPerStud = 70
+	gui.Parent = item
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
-	corner.Parent = frame
+	local title = Instance.new("TextLabel")
+	title.Name = "NextAreaGateTitle"
+	title.BackgroundTransparency = 1
+	title.Font = Enum.Font.GothamBlack
+	title.Position = UDim2.new(0.05, 0, 0.08, 0)
+	title.Size = UDim2.new(0.9, 0, 0.42, 0)
+	title.Text = "ELEMENTARY SCHOOL"
+	title.TextColor3 = COLORS.LightBlue
+	title.TextScaled = true
+	title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	title.TextStrokeTransparency = 0.45
+	title.Parent = gui
 
-	local stroke = Instance.new("UIStroke")
-	stroke.Name = "StatusStroke"
-	stroke.Color = accentColor
-	stroke.Thickness = 2
-	stroke.Transparency = 0.18
-	stroke.Parent = frame
+	local subtitle = Instance.new("TextLabel")
+	subtitle.Name = "NextAreaGateSubtitle"
+	subtitle.BackgroundTransparency = 1
+	subtitle.Font = Enum.Font.GothamBold
+	subtitle.Position = UDim2.new(0.08, 0, 0.52, 0)
+	subtitle.Size = UDim2.new(0.84, 0, 0.34, 0)
+	subtitle.Text = "REQUIRED IQ 80.500"
+	subtitle.TextColor3 = COLORS.WarmWhite
+	subtitle.TextScaled = true
+	subtitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	subtitle.TextStrokeTransparency = 0.58
+	subtitle.Parent = gui
 
-	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Name = "TitleLabel"
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Font = Enum.Font.GothamBlack
-	titleLabel.Position = UDim2.new(0, 10, 0, 8)
-	titleLabel.Size = UDim2.new(1, -20, 0, 30)
-	titleLabel.Text = title
-	titleLabel.TextColor3 = accentColor
-	titleLabel.TextScaled = true
-	titleLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	titleLabel.TextStrokeTransparency = 0.4
-	titleLabel.Parent = frame
-
-	local subtitleLabel = Instance.new("TextLabel")
-	subtitleLabel.Name = "SubtitleLabel"
-	subtitleLabel.BackgroundTransparency = 1
-	subtitleLabel.Font = Enum.Font.GothamBold
-	subtitleLabel.Position = UDim2.new(0, 10, 0, 43)
-	subtitleLabel.Size = UDim2.new(1, -20, 0, 24)
-	subtitleLabel.Text = subtitle
-	subtitleLabel.TextColor3 = COLORS.WarmWhite
-	subtitleLabel.TextScaled = true
-	subtitleLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	subtitleLabel.TextStrokeTransparency = 0.62
-	subtitleLabel.Parent = frame
-
-	return gui
-end
-
-local function namedBillboardLabels(gui, titleName, subtitleName)
-	local frame = gui:FindFirstChild("StatusFrame")
-	if not frame then
-		return
-	end
-
-	local title = frame:FindFirstChild("TitleLabel")
-	if title then
-		title.Name = titleName
-	end
-
-	local subtitle = frame:FindFirstChild("SubtitleLabel")
-	if subtitle then
-		subtitle.Name = subtitleName
-	end
+	return item
 end
 
 local function prompt(parent, name, actionText, objectText)
@@ -347,7 +316,7 @@ local function createRollArea(map, lobby)
 		Orientation = Vector3.new(0, 0, 90),
 	})
 	rollButton:SetAttribute("VisualOnly", true)
-	billboard(rollButton, "RollButtonBillboard", "ROLL IQ", "TAP TO GROW", COLORS.RollLime, Vector3.new(0, 6, 0))
+	sign(area, "P0_RollPedestal_FixedSign", "ROLL IQ\nTAP TO GROW", Vector3.new(0, 6.5, -6.2), Vector3.new(16, 5, 0.5), COLORS.RollLime)
 
 	part(area, "P0_BookDecor_A", Vector3.new(6, 0.5, 4), Vector3.new(-14, 2.2, 13), { Color = COLORS.QuestYellow, Decorative = true })
 	part(area, "P0_BookDecor_B", Vector3.new(5, 0.45, 3.5), Vector3.new(14, 2.15, 13), { Color = COLORS.ResearchPurple, Decorative = true, Orientation = Vector3.new(0, 12, 0) })
@@ -385,11 +354,7 @@ local function createGateArea(map, lobby)
 		Transparency = 0.12,
 		Decorative = true,
 	})
-	local top = part(gate, "NextAreaGateBillboardMount", Vector3.new(8, 1, 1), Vector3.new(0, 24, 67), { Color = COLORS.LightBlue, Decorative = true })
-	local gui = billboard(top, "NextAreaGateBillboard", "ELEMENTARY SCHOOL", "REQUIRED IQ 80.500", COLORS.LightBlue, Vector3.new(0, 2.8, 0))
-	gui.Name = "NextAreaGateBillboard"
-	namedBillboardLabels(gui, "NextAreaGateTitle", "NextAreaGateSubtitle")
-
+	gateSurfaceSign(gate, "P0_GateFixedSign", Vector3.new(0, 25.2, 64))
 	sign(area, "P0_GateRequirementSign", "LOCKED - REQUIRED IQ 80.500", Vector3.new(0, 27, 64), Vector3.new(36, 4, 0.4), COLORS.ChestGold)
 	part(area, "P0_GateSchoolPreview", Vector3.new(70, 28, 4), Vector3.new(0, 14, 87), {
 		Color = Color3.fromRGB(226, 235, 245),
@@ -421,8 +386,6 @@ local function createQuestArea(map, lobby)
 		Decorative = true,
 	})
 	prompt(body, "QuestOpenPrompt", "Talk", "Quest Board")
-	local questGui = billboard(body, "QuestStatusBillboard", "QUESTS", "Check Progress", COLORS.QuestYellow, Vector3.new(0, 5.2, 0))
-	namedBillboardLabels(questGui, "QuestStatusTitle", "QuestStatusSubtitle")
 	local readyIcon = part(map, "QuestReadyIcon", Vector3.new(1.4, 1.4, 1.4), Vector3.new(-58.5, 11, 10), {
 		Color = COLORS.Slate,
 		Shape = Enum.PartType.Ball,
@@ -465,8 +428,6 @@ local function createChestArea(map, lobby)
 		CanCollide = true,
 		CanQuery = true,
 	})
-	local chestGui = billboard(chest, "ChestStatusBillboard", "CHESTS", "Spend CP for Rewards", COLORS.ChestGold, Vector3.new(0, 5, 0))
-	namedBillboardLabels(chestGui, "ChestStatusTitle", "ChestStatusSubtitle")
 	part(station, "WorldChestLid", Vector3.new(10, 1.2, 7.8), Vector3.new(52, 8.9, 2), { Color = COLORS.ChestGold, Decorative = true })
 	part(station, "WorldChestBand", Vector3.new(1.1, 5.8, 7.8), Vector3.new(52, 6.2, 2), { Color = COLORS.ChestGold, Decorative = true })
 	local promptPart = part(station, "ChestPromptPart", Vector3.new(12, 1, 9), Vector3.new(52, 3.95, 2), {
@@ -558,7 +519,7 @@ local function createArea2Preview(map)
 		CanQuery = true,
 	})
 	prompt(promptPart, "Area2ReturnPrompt", "Return", "Lobby")
-	billboard(promptPart, "Area2ReturnBillboard", "RETURN", "Back to Lobby", COLORS.LightBlue)
+	sign(zone, "P0_Area2ReturnFixedSign", "RETURN TO LOBBY", Vector3.new(position.X + 17, position.Y + 5.4, position.Z + 5.5), Vector3.new(18, 4, 0.5), COLORS.LightBlue)
 end
 
 local function setupLighting()

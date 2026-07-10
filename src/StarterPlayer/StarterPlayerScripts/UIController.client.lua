@@ -1511,17 +1511,17 @@ function UISections.resolveNextAreaGateStatus()
 
 	local simpleMap = Workspace:FindFirstChild("SimpleMap")
 	local gate = simpleMap and simpleMap:FindFirstChild("NextAreaGate")
-	local billboard = gate and gate:FindFirstChild("NextAreaGateBillboard", true)
-	local frame = billboard and billboard:FindFirstChild("NextAreaGateBillboardFrame")
+	local title = gate and gate:FindFirstChild("NextAreaGateTitle", true)
+	local subtitle = gate and gate:FindFirstChild("NextAreaGateSubtitle", true)
 
-	if not frame then
+	if not title or not subtitle then
 		return false
 	end
 
-	nextAreaWorldStatus.Frame = frame
-	nextAreaWorldStatus.Title = frame:FindFirstChild("NextAreaGateTitle")
-	nextAreaWorldStatus.Subtitle = frame:FindFirstChild("NextAreaGateSubtitle")
-	nextAreaWorldStatus.Stroke = frame:FindFirstChildOfClass("UIStroke")
+	nextAreaWorldStatus.Frame = nil
+	nextAreaWorldStatus.Title = title
+	nextAreaWorldStatus.Subtitle = subtitle
+	nextAreaWorldStatus.Stroke = nil
 	nextAreaWorldStatus.Door = gate:FindFirstChild("NextAreaGate_Door")
 	nextAreaWorldStatus.BottomGlow = gate:FindFirstChild("NextAreaGateFrame_BottomGlow")
 	nextAreaWorldStatus.LockIcon = gate:FindFirstChild("NextAreaLockIcon")
@@ -1529,7 +1529,7 @@ function UISections.resolveNextAreaGateStatus()
 	if not nextAreaWorldStatus.Title or not nextAreaWorldStatus.Subtitle then
 		if not nextAreaWorldStatus.Warned then
 			nextAreaWorldStatus.Warned = true
-			warn("[NextAreaGate] Billboard labels missing; gate status update skipped.")
+			warn("[NextAreaGate] Surface sign labels missing; gate status update skipped.")
 		end
 
 		return false
@@ -1544,19 +1544,12 @@ function UISections.refreshNextAreaGateStatus()
 	end
 
 	local ready = (tonumber(stats.IQ) or 0) >= NEXT_AREA_REQUIRED_IQ
-	local title = ready and "AREA 2 READY" or "AREA 2 LOCKED"
-	local subtitle = ready and "Unlock Coming Soon" or "Need 10,000 IQ"
 	local accentColor = ready and Color3.fromRGB(105, 240, 210) or Color3.fromRGB(170, 180, 205)
-	local frameColor = ready and Color3.fromRGB(16, 42, 38) or Color3.fromRGB(24, 26, 34)
 
-	nextAreaWorldStatus.Title.Text = title
-	nextAreaWorldStatus.Title.TextColor3 = accentColor
-	nextAreaWorldStatus.Subtitle.Text = subtitle
+	nextAreaWorldStatus.Title.Text = "ELEMENTARY SCHOOL"
+	nextAreaWorldStatus.Title.TextColor3 = Color3.fromRGB(138, 196, 235)
+	nextAreaWorldStatus.Subtitle.Text = "REQUIRED IQ 80.500"
 	nextAreaWorldStatus.Subtitle.TextColor3 = Color3.fromRGB(245, 245, 245)
-
-	if nextAreaWorldStatus.Frame then
-		nextAreaWorldStatus.Frame.BackgroundColor3 = frameColor
-	end
 
 	if nextAreaWorldStatus.Stroke then
 		nextAreaWorldStatus.Stroke.Color = accentColor
