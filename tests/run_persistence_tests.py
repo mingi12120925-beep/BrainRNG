@@ -286,6 +286,32 @@ def check_persistence_audit_tools(data_manager: str, game_server: str) -> None:
 	)
 
 
+def check_chest_state_declared_before_session_audit(game_server: str) -> None:
+    audit_index = game_server.find("local function printSessionPersistenceAudit")
+    function_index = game_server.find("local function getChestState")
+    forward_declaration_index = game_server.find("local getChestState")
+    assignment_index = game_server.find("getChestState = function")
+
+    if audit_index == -1:
+        fail("Session audit order", "Could not find printSessionPersistenceAudit().", GAME_SERVER)
+        return
+
+    has_function_before_audit = function_index != -1 and function_index < audit_index
+    has_assignment_before_audit = (
+        forward_declaration_index != -1
+        and assignment_index != -1
+        and forward_declaration_index < audit_index
+        and assignment_index < audit_index
+    )
+
+    if not has_function_before_audit and not has_assignment_before_audit:
+        fail(
+            "Session audit order",
+            "getChestState must be declared or assigned before printSessionPersistenceAudit uses it.",
+            GAME_SERVER,
+        )
+
+
 def check_quest_dictionary_shape(game_server: str) -> None:
     require_contains(
         "Quest dictionary structure",
@@ -358,6 +384,7 @@ def main() -> int:
     check_export_player_data(game_logic)
     check_import_player_data(game_logic, game_server)
     check_persistence_audit_tools(data_manager, game_server)
+    check_chest_state_declared_before_session_audit(game_server)
     check_quest_dictionary_shape(game_server)
     check_player_removing_order(game_server)
 

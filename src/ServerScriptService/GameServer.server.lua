@@ -325,6 +325,22 @@ local function countTrueDictionaryEntries(source)
 	return count
 end
 
+local function getChestState(player)
+	local userId = player.UserId
+	local state = playerChestStates[userId]
+
+	if not state then
+		state = {
+			ChestPoints = 0,
+			TotalOpened = 0,
+		}
+
+		playerChestStates[userId] = state
+	end
+
+	return state
+end
+
 local function printSessionPersistenceAudit(player, label)
 	local chestState = getChestState(player)
 	local quests = exportQuestState(player)
@@ -362,22 +378,6 @@ local function importQuestState(player, questsData)
 	end
 
 	playerQuestStates[userId] = state
-end
-
-local function getChestState(player)
-	local userId = player.UserId
-	local state = playerChestStates[userId]
-
-	if not state then
-		state = {
-			ChestPoints = 0,
-			TotalOpened = 0,
-		}
-
-		playerChestStates[userId] = state
-	end
-
-	return state
 end
 
 local function importChestState(player, data)
