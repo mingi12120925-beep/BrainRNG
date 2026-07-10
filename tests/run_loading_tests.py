@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GAME_SERVER = ROOT / "src" / "ServerScriptService" / "GameServer.server.lua"
 UI_CONTROLLER = ROOT / "src" / "StarterPlayer" / "StarterPlayerScripts" / "UIController.client.lua"
+LOADING_CONTROLLER = ROOT / "src" / "StarterPlayer" / "StarterPlayerScripts" / "LoadingController.lua"
 DATA_MANAGER = ROOT / "src" / "ServerScriptService" / "DataManager.lua"
 
 
@@ -45,7 +46,7 @@ def require_regex(name: str, text: str, pattern: str, reason: str, file_path: Pa
 
 
 def get_function_body(text: str, function_name: str) -> str:
-    pattern = re.compile(r"local function\s+" + re.escape(function_name) + r"\s*\([^)]*\)")
+    pattern = re.compile(r"(?:local\s+function|function)\s+" + re.escape(function_name) + r"\s*\([^)]*\)")
     match = pattern.search(text)
     if not match:
         return ""
@@ -56,6 +57,28 @@ def get_function_body(text: str, function_name: str) -> str:
         return text[start : start + next_match.start()]
 
     return text[start:]
+
+
+def count_top_level_local_declarations(text: str) -> int:
+    count = 0
+    depth = 0
+    token_pattern = re.compile(r"\b(function|if|for|while|repeat|do|end|until)\b")
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("--"):
+            continue
+
+        if re.match(r"local\s+(?:function\s+)?[A-Za-z_]", line) and depth == 0:
+            count += 1
+
+        for token in token_pattern.findall(line):
+            if token in {"function", "if", "for", "while", "repeat", "do"}:
+                depth += 1
+            elif token in {"end", "until"}:
+                depth = max(0, depth - 1)
+
+    return count
 
 
 def check_server_ready_signal(game_server: str) -> None:
@@ -100,66 +123,91 @@ def check_server_ready_signal(game_server: str) -> None:
         fail("PlayerDataReady failure path", "LoadProfile failure must kick and return before PlayerDataReady.", GAME_SERVER)
 
 
-def check_loading_gui(ui_controller: str) -> None:
+def check_loading_module(ui_controller: str, loading_controller: str) -> None:
     require_contains(
         "Loading constants",
-        ui_controller,
+        loading_controller,
         [
             "local MIN_LOADING_TIME = 1.2",
             "local MAX_LOADING_TIME = 12",
             "local FADE_OUT_TIME = 0.35",
         ],
-        UI_CONTROLLER,
+        LOADING_CONTROLLER,
+    )
+
+    require_contains(
+        "LoadingController module",
+        loading_controller,
+        [
+            "local LoadingController = {}",
+            "function LoadingController.Start(config)",
+            "return LoadingController",
+        ],
+        LOADING_CONTROLLER,
     )
 
     require_contains(
         "Loading remote connection",
+        loading_controller,
+        [
+            "state.PlayerDataReady.OnClientEvent:Connect(function()",
+            "complete(state)",
+            "if state.Player:GetAttribute(\"DataReady\") == true then",
+        ],
+        LOADING_CONTROLLER,
+    )
+
+    require_contains(
+        "UIController loading entrypoint",
         ui_controller,
         [
+            "local LoadingController = require(script.Parent:WaitForChild(\"LoadingController\"))",
             "local PlayerDataReady = remotesFolder:WaitForChild(\"PlayerDataReady\")",
-            "PlayerDataReady.OnClientEvent:Connect(function()",
-            "task.spawn(completeLoadingScreen)",
-            "if player:GetAttribute(\"DataReady\") == true then",
+            "LoadingController.Start({",
+            "Player = player",
+            "PlayerGui = playerGui",
+            "PlayerDataReady = PlayerDataReady",
+            "TweenService = TweenService",
         ],
         UI_CONTROLLER,
     )
 
-    body = get_function_body(ui_controller, "createLoadingScreen")
+    body = get_function_body(loading_controller, "createLoadingScreen")
     if not body:
-        fail("createLoadingScreen", "Could not find createLoadingScreen().", UI_CONTROLLER)
+        fail("createLoadingScreen", "Could not find createLoadingScreen().", LOADING_CONTROLLER)
         return
 
     require_contains(
         "Loading ScreenGui shape",
         body,
         [
-            "loadingGui.Name = \"BrainRNG_LoadingGui\"",
-            "loadingGui.IgnoreGuiInset = true",
-            "loadingGui.ResetOnSpawn = false",
-            "loadingGui.DisplayOrder = 10000",
-            "loadingGui.ZIndexBehavior = Enum.ZIndexBehavior.Global",
-            "loadingGui.Enabled = true",
-            "loadingGui.Parent = playerGui",
+            "state.Gui.Name = \"BrainRNG_LoadingGui\"",
+            "state.Gui.IgnoreGuiInset = true",
+            "state.Gui.ResetOnSpawn = false",
+            "state.Gui.DisplayOrder = 10000",
+            "state.Gui.ZIndexBehavior = Enum.ZIndexBehavior.Global",
+            "state.Gui.Enabled = true",
+            "state.Gui.Parent = state.PlayerGui",
             "background.Name = \"LoadingBackground\"",
             "background.Size = UDim2.fromScale(1, 1)",
             "background.BackgroundColor3 = Color3.fromRGB(12, 17, 30)",
-            "loadingTitle.Name = \"GameTitle\"",
-            "loadingTitle.Text = \"BRAIN RNG\"",
+            "state.Title.Name = \"GameTitle\"",
+            "state.Title.Text = \"BRAIN RNG\"",
             "subtitle.Text = \"ROLL. LEARN. EVOLVE.\"",
             "progressBackground.Name = \"ProgressBarBackground\"",
             "progressSizeConstraint.MinSize = Vector2.new(230, 10)",
             "progressSizeConstraint.MaxSize = Vector2.new(520, 20)",
-            "loadingProgressFill.Name = \"ProgressFill\"",
-            "loadingProgressFill.Size = UDim2.fromScale(0.06, 1)",
-            "loadingStatusLabel.Name = \"LoadingStatus\"",
+            "state.ProgressFill.Name = \"ProgressFill\"",
+            "state.ProgressFill.Size = UDim2.fromScale(0.06, 1)",
+            "state.StatusLabel.Name = \"LoadingStatus\"",
             "[Loading] Screen shown",
         ],
-        UI_CONTROLLER,
+        LOADING_CONTROLLER,
     )
 
     require_contains(
         "Loading progress and delay states",
-        body,
+        loading_controller,
         [
             "{ Delay = 0, Progress = 0.06 }",
             "{ Delay = 0.5, Progress = 0.22 }",
@@ -170,55 +218,50 @@ def check_loading_gui(ui_controller: str) -> None:
             "\"Please wait a moment.\"",
             "\"Loading is taking longer than expected.\"",
         ],
-        UI_CONTROLLER,
+        LOADING_CONTROLLER,
     )
 
 
-def check_loading_finish_requires_ready_signal(ui_controller: str) -> None:
-    complete_body = get_function_body(ui_controller, "completeLoadingScreen")
-    fade_body = get_function_body(ui_controller, "fadeOutLoadingScreen")
+def check_loading_finish_requires_ready_signal(ui_controller: str, loading_controller: str) -> None:
+    complete_body = get_function_body(loading_controller, "complete")
+    fade_body = get_function_body(loading_controller, "fadeOut")
 
     if not complete_body:
-        fail("completeLoadingScreen", "Could not find completeLoadingScreen().", UI_CONTROLLER)
+        fail("complete", "Could not find complete().", LOADING_CONTROLLER)
     else:
         require_contains(
             "Ready signal completion",
             complete_body,
             [
-                "loadingReadyReceived = true",
+                "state.ReadyReceived = true",
                 "[Loading] PlayerDataReady received",
-                "loadingStatusLabel.Text = \"Ready!\"",
-                "tweenLoadingProgress(1, 0.18)",
+                "state.StatusLabel.Text = \"Ready!\"",
+                "tweenProgress(state, 1, 0.18)",
                 "if elapsed < MIN_LOADING_TIME then",
                 "task.wait(MIN_LOADING_TIME - elapsed)",
                 "task.wait(0.15)",
-                "fadeOutLoadingScreen()",
+                "fadeOut(state)",
             ],
-            UI_CONTROLLER,
+            LOADING_CONTROLLER,
         )
 
     if not fade_body:
-        fail("fadeOutLoadingScreen", "Could not find fadeOutLoadingScreen().", UI_CONTROLLER)
+        fail("fadeOut", "Could not find fadeOut().", LOADING_CONTROLLER)
     else:
         require_contains(
             "Loading fade destroy",
             fade_body,
             [
-                "loadingFinished = true",
-                "loadingGui:Destroy()",
+                "state.Finished = true",
+                "state.Gui:Destroy()",
                 "[Loading] Fade out complete",
             ],
-            UI_CONTROLLER,
+            LOADING_CONTROLLER,
         )
 
-    create_index = ui_controller.find("createLoadingScreen()")
     remotes_index = ui_controller.find("local remotesFolder = ReplicatedStorage:WaitForChild(\"Remotes\")")
-    if create_index == -1 or remotes_index == -1 or create_index > remotes_index:
-        fail("Immediate loading screen", "Loading screen must be created before waiting for Remotes.", UI_CONTROLLER)
-
     player_data_ready_index = ui_controller.find("local PlayerDataReady = remotesFolder:WaitForChild(\"PlayerDataReady\")")
-    player_data_ready_connection_index = ui_controller.find("PlayerDataReady.OnClientEvent:Connect(function()")
-    data_ready_attribute_index = ui_controller.find("if player:GetAttribute(\"DataReady\") == true then")
+    loading_start_index = ui_controller.find("LoadingController.Start({")
     general_remote_indices = [
         ui_controller.find("local RollRequest = remotesFolder:WaitForChild(\"RollRequest\")"),
         ui_controller.find("local UpgradeRequest = remotesFolder:WaitForChild(\"UpgradeRequest\")"),
@@ -226,17 +269,47 @@ def check_loading_finish_requires_ready_signal(ui_controller: str) -> None:
         ui_controller.find("local PopupEvent = remotesFolder:WaitForChild(\"PopupEvent\")"),
     ]
 
-    if -1 in [player_data_ready_index, player_data_ready_connection_index, data_ready_attribute_index] or any(index == -1 for index in general_remote_indices):
-        fail("PlayerDataReady early hookup", "Missing PlayerDataReady early hookup or general remote waits.", UI_CONTROLLER)
+    if -1 in [remotes_index, player_data_ready_index, loading_start_index] or any(index == -1 for index in general_remote_indices):
+        fail("PlayerDataReady early hookup", "Missing PlayerDataReady early module start or general remote waits.", UI_CONTROLLER)
         return
 
     first_general_remote_index = min(general_remote_indices)
-    if not (remotes_index < player_data_ready_index < player_data_ready_connection_index < data_ready_attribute_index < first_general_remote_index):
+    if not (remotes_index < player_data_ready_index < loading_start_index < first_general_remote_index):
         fail(
             "PlayerDataReady early hookup",
-            "PlayerDataReady connection and DataReady attribute check must happen before general RemoteEvent WaitForChild calls.",
+            "LoadingController.Start must receive PlayerDataReady before general RemoteEvent WaitForChild calls.",
             UI_CONTROLLER,
         )
+
+    forbidden_ui_loading_locals = [
+        "local MIN_LOADING_TIME",
+        "local MAX_LOADING_TIME",
+        "local FADE_OUT_TIME",
+        "local loadingStartedAt",
+        "local loadingReadyReceived",
+        "local loadingFinished",
+        "local loadingGui",
+        "local loadingProgressFill",
+        "local loadingStatusLabel",
+        "local loadingTitle",
+        "local loadingGlowLeft",
+        "local loadingGlowRight",
+        "local function addLoadingCorner",
+        "local function addLoadingTextConstraint",
+        "local function tweenLoadingProgress",
+        "local function createLoadingScreen",
+        "local function fadeOutLoadingScreen",
+        "local function completeLoadingScreen",
+    ]
+    leaked = [needle for needle in forbidden_ui_loading_locals if needle in ui_controller]
+    if leaked:
+        fail("UIController loading locals removed", "Loading locals still present in UIController: " + ", ".join(leaked), UI_CONTROLLER)
+
+
+def check_ui_controller_local_budget(ui_controller: str) -> None:
+    count = count_top_level_local_declarations(ui_controller)
+    if count > 180:
+        fail("UIController local budget", f"Top-level local declarations should be <= 180, found {count}.", UI_CONTROLLER)
 
 
 def check_data_version(data_manager: str) -> None:
@@ -252,11 +325,13 @@ def check_data_version(data_manager: str) -> None:
 def main() -> int:
     game_server = read_text(GAME_SERVER)
     ui_controller = read_text(UI_CONTROLLER)
+    loading_controller = read_text(LOADING_CONTROLLER)
     data_manager = read_text(DATA_MANAGER)
 
     check_server_ready_signal(game_server)
-    check_loading_gui(ui_controller)
-    check_loading_finish_requires_ready_signal(ui_controller)
+    check_loading_module(ui_controller, loading_controller)
+    check_loading_finish_requires_ready_signal(ui_controller, loading_controller)
+    check_ui_controller_local_budget(ui_controller)
     check_data_version(data_manager)
 
     if failures:
