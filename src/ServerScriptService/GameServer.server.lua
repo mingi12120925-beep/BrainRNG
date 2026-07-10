@@ -822,6 +822,7 @@ local function getDirtySaveState(player)
 			IsDirty = false,
 			DirtyReason = nil,
 			DirtyReasons = {},
+			DirtyRevision = 0,
 			LastDirtyAt = 0,
 			LastSaveAttemptAt = 0,
 			SaveInProgress = false,
@@ -852,9 +853,25 @@ local function formatDirtyReasons(state)
 	return table.concat(reasons, ",")
 end
 
-local function clearPlayerDirty(player, source)
+local function clearPlayerDirty(player, source, savedRevision)
 	local state = dirtySaveStates[player.UserId]
 	if not state then
+		return
+	end
+
+	if savedRevision ~= nil and state.DirtyRevision ~= savedRevision then
+		state.IsDirty = true
+		state.DirtyReason = formatDirtyReasons(state)
+		print(
+			"[DirtySave] KeepDirty userId="
+				.. tostring(player.UserId)
+				.. " savedRevision="
+				.. tostring(savedRevision)
+				.. " currentRevision="
+				.. tostring(state.DirtyRevision)
+				.. " source="
+				.. tostring(source or "Unknown")
+		)
 		return
 	end
 
@@ -882,6 +899,7 @@ local function markPlayerDirty(player, reason)
 	state.IsDirty = true
 	state.DirtyReasons[reason] = true
 	state.DirtyReason = formatDirtyReasons(state)
+	state.DirtyRevision += 1
 	state.LastDirtyAt = os.clock()
 
 	if shouldLog then
@@ -926,6 +944,7 @@ local function trySaveDirtyPlayer(player, source, force)
 	state.LastSaveAttemptAt = os.clock()
 
 	local reasons = formatDirtyReasons(state)
+	local saveRevision = state.DirtyRevision
 	print("[DirtySave] Begin userId=" .. tostring(player.UserId) .. " reasons=" .. reasons .. " source=" .. tostring(source or "DirtyLoop"))
 
 	local success, savedOrError = pcall(function()
@@ -937,7 +956,7 @@ local function trySaveDirtyPlayer(player, source, force)
 	state.SaveInProgress = false
 
 	if success and savedOrError then
-		clearPlayerDirty(player)
+		clearPlayerDirty(player, tostring(source or "DirtyLoop"), saveRevision)
 		print("[DirtySave] OK userId=" .. tostring(player.UserId))
 		return true
 	end
@@ -968,6 +987,7 @@ local function saveProfileWithDirtyGuard(player, source, options)
 
 	state.SaveInProgress = true
 	state.LastSaveAttemptAt = os.clock()
+	local saveRevision = state.DirtyRevision
 
 	local success, savedOrError = pcall(function()
 		return DataManager.SaveProfile(player, false, options)
@@ -976,7 +996,7 @@ local function saveProfileWithDirtyGuard(player, source, options)
 	state.SaveInProgress = false
 
 	if success and savedOrError then
-		clearPlayerDirty(player, source)
+		clearPlayerDirty(player, source, saveRevision)
 		return true
 	end
 
@@ -990,8 +1010,10 @@ local function releaseProfileWithDirtyGuard(player, source)
 
 	waitForDirtySave(player, 5)
 
+	state = dirtySaveStates[userId]
 	if state and state.SaveInProgress then
-		warn("[DirtySave] Release proceeding while save still in progress userId=" .. tostring(userId) .. " source=" .. tostring(source))
+		warn("[DirtySave] Release blocked by active save userId=" .. tostring(userId) .. " source=" .. tostring(source))
+		return false, "SAVE_IN_PROGRESS"
 	end
 
 	state = dirtySaveStates[userId]
@@ -999,6 +1021,7 @@ local function releaseProfileWithDirtyGuard(player, source)
 		state.SaveInProgress = true
 		state.LastSaveAttemptAt = os.clock()
 	end
+	local releaseRevision = state and state.DirtyRevision or nil
 
 	local success, result = pcall(function()
 		return DataManager.ReleaseProfile(player)
@@ -1009,7 +1032,7 @@ local function releaseProfileWithDirtyGuard(player, source)
 		state.SaveInProgress = false
 
 		if success and result then
-			clearPlayerDirty(player, tostring(source or "ReleaseProfile"))
+			clearPlayerDirty(player, tostring(source or "ReleaseProfile"), releaseRevision)
 		else
 			warn("[DirtySave] Release failed; dirty state cannot retry after player leaves userId=" .. tostring(userId) .. " source=" .. tostring(source))
 		end
@@ -1266,10 +1289,7 @@ local function handleLuckUpgrade(player)
 	updateAllStats(player)
 
 	if success then
-		local saved = saveProfileWithDirtyGuard(player, "LuckUpgrade")
-		if saved then
-			clearPlayerDirty(player, "LuckUpgrade")
-		end
+		saveProfileWithDirtyGuard(player, "LuckUpgrade")
 		local costText = nextCost and (formatNumber(nextCost) .. " Wins") or "MAX"
 		PopupEvent:FireClient(player, "LUCK UP|Lv " .. tostring(newLevel) .. " · Next " .. costText, "Info")
 		return
@@ -1296,10 +1316,7 @@ local function handleAutoRollUpgrade(player)
 	updateAllStats(player)
 
 	if success then
-		local saved = saveProfileWithDirtyGuard(player, "AutoRollUpgrade")
-		if saved then
-			clearPlayerDirty(player, "AutoRollUpgrade")
-		end
+		saveProfileWithDirtyGuard(player, "AutoRollUpgrade")
 
 		local nextText = nextCost and (" · Next " .. formatNumber(nextCost) .. " Wins") or ""
 		PopupEvent:FireClient(
@@ -1836,10 +1853,7 @@ local function connectWinPad(winPad)
 			local reward = tonumber(rewardWins) or 0
 
 			updateAllStats(player)
-			local saved = saveProfileWithDirtyGuard(player, "WinPad")
-			if saved then
-				clearPlayerDirty(player, "WinPad")
-			end
+			saveProfileWithDirtyGuard(player, "WinPad")
 			PopupEvent:FireClient(player, "WIN|+" .. formatNumber(reward) .. " Wins", "Win")
 		elseif status then
 			PopupEvent:FireClient(player, "WIN LOCKED|" .. tostring(status), "Info")
@@ -1984,6 +1998,11 @@ Players.PlayerRemoving:Connect(function(player)
 	flushQueuedAdminSaveBeforeRelease(player)
 
 	local success, result = releaseProfileWithDirtyGuard(player, "PlayerRemoving")
+
+	if not success and result == "SAVE_IN_PROGRESS" then
+		waitForDirtySave(player, 10)
+		success, result = releaseProfileWithDirtyGuard(player, "PlayerRemovingRetryAfterSave")
+	end
 
 	if not success then
 		warn("[GameServer] ReleaseProfile error:", player.Name, result)
