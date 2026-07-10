@@ -2102,31 +2102,45 @@ game:BindToClose(function()
 		if DataManager.IsLoaded(player) then
 			flushQueuedAdminSaveBeforeRelease(player)
 
-			local success, result = releaseProfileWithDirtyGuard(player, "BindToClose")
+			local releaseSucceeded = false
+			local finalSuccess = false
+			local finalResult = nil
+			local releaseSource = "BindToClose"
 
-			if not success then
-				failureCount += 1
-				warn("[GameServer] BindToClose ReleaseProfile error:", player.Name, result)
-			elseif not result then
-				failureCount += 1
-				warn("[GameServer] BindToClose ReleaseProfile failed, retrying:", player.Name)
+			while os.clock() - startedAt < BIND_TO_CLOSE_MAX_WAIT_SECONDS do
+				finalSuccess, finalResult = releaseProfileWithDirtyGuard(player, releaseSource)
 
-				if os.clock() - startedAt < BIND_TO_CLOSE_MAX_WAIT_SECONDS then
-					task.wait(0.5)
-
-					local retrySuccess, retryResult = releaseProfileWithDirtyGuard(player, "BindToCloseRetry")
-
-					if retrySuccess and retryResult then
-						successCount += 1
-					else
-						warn("[GameServer][CRITICAL] BindToClose ReleaseProfile retry failed:", player.Name, retryResult)
-					end
+				if finalSuccess and finalResult then
+					releaseSucceeded = true
+					break
 				end
-			else
-				successCount += 1
+
+				local remainingWait = BIND_TO_CLOSE_MAX_WAIT_SECONDS - (os.clock() - startedAt)
+				if remainingWait <= 0 then
+					break
+				end
+
+				if not finalSuccess and finalResult == "SAVE_IN_PROGRESS" then
+					warn("[GameServer] BindToClose ReleaseProfile waiting for active save:", player.Name)
+					waitForDirtySave(player, remainingWait)
+					releaseSource = "BindToCloseRetry"
+				elseif finalSuccess and not finalResult then
+					warn("[GameServer] BindToClose ReleaseProfile failed, retrying:", player.Name)
+					task.wait(math.min(0.5, remainingWait))
+					releaseSource = "BindToCloseRetry"
+				else
+					warn("[GameServer] BindToClose ReleaseProfile error:", player.Name, finalResult)
+					break
+				end
 			end
 
-			dirtySaveStates[player.UserId] = nil
+			if releaseSucceeded then
+				successCount += 1
+				dirtySaveStates[player.UserId] = nil
+			else
+				failureCount += 1
+				warn("[GameServer][CRITICAL] BindToClose ReleaseProfile final failure:", player.Name, finalResult)
+			end
 
 			if os.clock() - startedAt >= BIND_TO_CLOSE_MAX_WAIT_SECONDS then
 				warn("[DirtySave] BindToClose max wait reached after player=" .. player.Name)

@@ -69,6 +69,15 @@ def get_player_removing_body(text: str) -> str:
     return text[start:end]
 
 
+def get_bind_to_close_body(text: str) -> str:
+    marker = "game:BindToClose(function()"
+    start = text.find(marker)
+    if start == -1:
+        return ""
+
+    return text[start:]
+
+
 def check_dirty_state_shape(game_server: str) -> None:
     require_regex(
         "Dirty save interval",
@@ -273,17 +282,45 @@ def check_player_removing_order(game_server: str) -> None:
 
 
 def check_bind_to_close(game_server: str) -> None:
+    body = get_bind_to_close_body(game_server)
+    if not body:
+        fail("BindToClose", "Could not find BindToClose block.")
+        return
+
     require_contains(
         "BindToClose dirty handling",
-        game_server,
+        body,
         [
-            "local BIND_TO_CLOSE_MAX_WAIT_SECONDS = 25",
-            "releaseProfileWithDirtyGuard(player, \"BindToClose\")",
-            "releaseProfileWithDirtyGuard(player, \"BindToCloseRetry\")",
+            "local releaseSource = \"BindToClose\"",
+            "releaseProfileWithDirtyGuard(player, releaseSource)",
+            "releaseSource = \"BindToCloseRetry\"",
+            "finalResult == \"SAVE_IN_PROGRESS\"",
+            "waitForDirtySave(player, remainingWait)",
+            "if releaseSucceeded then",
+            "successCount += 1",
+            "else",
+            "failureCount += 1",
             "[DirtySave] BindToClose summary success=",
             "dirtySaveStates[player.UserId] = nil",
         ],
     )
+
+    require_contains(
+        "BindToClose max wait",
+        game_server,
+        ["local BIND_TO_CLOSE_MAX_WAIT_SECONDS = 25"],
+    )
+
+    failure_index = body.find("failureCount += 1")
+    final_failure_index = body.find("BindToClose ReleaseProfile final failure")
+    dirty_clear_index = body.find("dirtySaveStates[player.UserId] = nil")
+    success_index = body.find("if releaseSucceeded then")
+
+    if failure_index == -1 or final_failure_index == -1 or final_failure_index < failure_index:
+        fail("BindToClose failure count", "failureCount must only increment for final release failure.")
+
+    if dirty_clear_index == -1 or success_index == -1 or dirty_clear_index < success_index:
+        fail("BindToClose dirty cleanup", "dirtySaveStates must only be cleared after final release success.")
 
 
 def check_data_version(data_manager: str) -> None:
