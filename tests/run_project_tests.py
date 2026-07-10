@@ -22,7 +22,11 @@ def main() -> int:
 	if dirty_save_result != 0:
 		return dirty_save_result
 
-	return run([sys.executable, "tests/run_loading_tests.py"])
+	loading_result = run([sys.executable, "tests/run_loading_tests.py"])
+	if loading_result != 0:
+		return loading_result
+
+	return run([sys.executable, "tests/run_lobby_map_tests.py"])
 
 
 if __name__ == "__main__":

@@ -5,1008 +5,620 @@ local Workspace = game:GetService("Workspace")
 local SimpleWorldBuilder = {}
 
 local MAP_NAME = "SimpleMap"
+local LOBBY_NAME = "Lobby_Prestige0_School"
+local NEXT_AREA_REQUIRED_IQ = 80500
 
 local COLORS = {
-	Floor = Color3.fromRGB(218, 222, 218),
-	FloorAlt = Color3.fromRGB(190, 202, 214),
-	Grass = Color3.fromRGB(94, 176, 82),
-	Blue = Color3.fromRGB(85, 175, 245),
-	Mint = Color3.fromRGB(86, 205, 150),
-	Gold = Color3.fromRGB(255, 205, 70),
-	Purple = Color3.fromRGB(145, 105, 220),
-	Pink = Color3.fromRGB(235, 120, 190),
-	Red = Color3.fromRGB(235, 90, 90),
-	Green = Color3.fromRGB(105, 205, 120),
-	Slate = Color3.fromRGB(110, 124, 138),
-	Dark = Color3.fromRGB(38, 45, 54),
-	White = Color3.fromRGB(245, 245, 245),
+	WarmWhite = Color3.fromRGB(242, 239, 229),
+	SchoolBlue = Color3.fromRGB(64, 125, 210),
+	LightBlue = Color3.fromRGB(138, 196, 235),
+	GrassGreen = Color3.fromRGB(89, 157, 76),
+	RollLime = Color3.fromRGB(123, 255, 94),
+	QuestYellow = Color3.fromRGB(255, 205, 72),
+	ChestGold = Color3.fromRGB(234, 171, 54),
+	ResearchPurple = Color3.fromRGB(139, 96, 210),
+	DarkText = Color3.fromRGB(35, 43, 58),
+	Path = Color3.fromRGB(223, 218, 205),
+	Campus = Color3.fromRGB(207, 190, 156),
+	Wood = Color3.fromRGB(112, 76, 48),
+	Slate = Color3.fromRGB(58, 68, 82),
 }
 
-local function addTag(instance, tag)
-	if not CollectionService:HasTag(instance, tag) then
-		CollectionService:AddTag(instance, tag)
+local function tag(instance, tagName)
+	if not CollectionService:HasTag(instance, tagName) then
+		CollectionService:AddTag(instance, tagName)
 	end
 end
 
-local function makeDecorative(part)
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanTouch = false
-	part.CanQuery = false
-	part:SetAttribute("Decorative", true)
+local function folder(parent, name)
+	local item = Instance.new("Folder")
+	item.Name = name
+	item.Parent = parent
+	return item
 end
 
-local function createPart(parent, name, size, position, options)
+local function part(parent, name, size, position, options)
 	options = options or {}
 
-	local part = Instance.new("Part")
-	part.Name = name
-	part.Size = size
-	part.Position = position
-	part.Anchored = options.Anchored ~= false
-	part.Material = options.Material or Enum.Material.SmoothPlastic
-	part.Color = options.Color or COLORS.Floor
-	part.Transparency = options.Transparency or 0
-	part.Reflectance = options.Reflectance or 0
-	part.TopSurface = Enum.SurfaceType.Smooth
-	part.BottomSurface = Enum.SurfaceType.Smooth
+	local item = Instance.new("Part")
+	item.Name = name
+	item.Size = size
+	item.Position = position
+	item.Anchored = true
+	item.Material = options.Material or Enum.Material.SmoothPlastic
+	item.Color = options.Color or COLORS.WarmWhite
+	item.Transparency = options.Transparency or 0
+	item.Reflectance = options.Reflectance or 0
+	item.CanCollide = options.CanCollide ~= false
+	item.CanTouch = options.CanTouch == true
+	item.CanQuery = options.CanQuery ~= false
+	item.TopSurface = Enum.SurfaceType.Smooth
+	item.BottomSurface = Enum.SurfaceType.Smooth
+	item.CastShadow = options.CastShadow == true
 
-	if options.Decorative then
-		makeDecorative(part)
-	else
-		part.CanCollide = options.CanCollide ~= false
-		part.CanTouch = options.CanTouch ~= false
-		part.CanQuery = options.CanQuery ~= false
+	if options.Shape then
+		item.Shape = options.Shape
 	end
 
-	part.Parent = parent
-	return part
+	if options.Orientation then
+		item.Orientation = options.Orientation
+	end
+
+	if options.Decorative then
+		item.CanCollide = false
+		item.CanTouch = false
+		item.CanQuery = false
+		item:SetAttribute("Decorative", true)
+	end
+
+	item.Parent = parent
+	return item
 end
 
-local function createFolder(parent, name)
-	local folder = Instance.new("Folder")
-	folder.Name = name
-	folder.Parent = parent
-	return folder
-end
-
-local function createSign(parent, name, text, position, size, color)
-	local sign = createPart(parent, name, size or Vector3.new(24, 6, 0.4), position, {
-		Color = COLORS.Dark,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-
+local function surfaceText(parent, name, text, color)
 	local gui = Instance.new("SurfaceGui")
-	gui.Name = "SurfaceGui"
+	gui.Name = name
 	gui.Face = Enum.NormalId.Front
-	gui.LightInfluence = 0
+	gui.LightInfluence = 0.15
 	gui.PixelsPerStud = 60
-	gui.Parent = sign
+	gui.Parent = parent
 
 	local label = Instance.new("TextLabel")
 	label.BackgroundTransparency = 1
 	label.Size = UDim2.fromScale(1, 1)
 	label.Text = text
-	label.TextColor3 = color or COLORS.White
+	label.TextColor3 = color or COLORS.WarmWhite
 	label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	label.TextStrokeTransparency = 0.35
+	label.TextStrokeTransparency = 0.48
 	label.TextScaled = true
 	label.TextWrapped = true
 	label.Font = Enum.Font.GothamBlack
 	label.Parent = gui
 
-	return sign
+	return label
 end
 
-local function createQuestStatusBillboard(parent)
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = "QuestStatusBillboard"
-	billboard.AlwaysOnTop = true
-	billboard.MaxDistance = 78
-	billboard.Size = UDim2.new(0, 210, 0, 82)
-	billboard.StudsOffset = Vector3.new(0, 4.9, 0)
-	billboard.Parent = parent
+local function sign(parent, name, text, position, size, color, orientation)
+	local item = part(parent, name, size or Vector3.new(24, 5, 0.4), position, {
+		Color = COLORS.DarkText,
+		Material = Enum.Material.SmoothPlastic,
+		Decorative = true,
+		Orientation = orientation,
+	})
+	surfaceText(item, "SurfaceGui", text, color or COLORS.WarmWhite)
+	return item
+end
+
+local function billboard(parent, name, title, subtitle, accentColor, offset)
+	local gui = Instance.new("BillboardGui")
+	gui.Name = name
+	gui.AlwaysOnTop = false
+	gui.MaxDistance = 120
+	gui.Size = UDim2.new(0, 240, 0, 82)
+	gui.StudsOffset = offset or Vector3.new(0, 5, 0)
+	gui.Parent = parent
 
 	local frame = Instance.new("Frame")
 	frame.Name = "StatusFrame"
-	frame.BackgroundColor3 = COLORS.Dark
-	frame.BackgroundTransparency = 0.08
-	frame.BorderSizePixel = 0
-	frame.Size = UDim2.fromScale(1, 1)
-	frame.Parent = billboard
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
-	corner.Parent = frame
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Name = "StatusStroke"
-	stroke.Color = COLORS.Green
-	stroke.Thickness = 2
-	stroke.Transparency = 0.2
-	stroke.Parent = frame
-
-	local title = Instance.new("TextLabel")
-	title.Name = "QuestStatusTitle"
-	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.GothamBlack
-	title.Position = UDim2.new(0, 10, 0, 8)
-	title.Size = UDim2.new(1, -20, 0, 30)
-	title.Text = "QUESTS"
-	title.TextColor3 = COLORS.Green
-	title.TextScaled = true
-	title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	title.TextStrokeTransparency = 0.35
-	title.Parent = frame
-
-	local subtitle = Instance.new("TextLabel")
-	subtitle.Name = "QuestStatusSubtitle"
-	subtitle.BackgroundTransparency = 1
-	subtitle.Font = Enum.Font.GothamBold
-	subtitle.Position = UDim2.new(0, 10, 0, 43)
-	subtitle.Size = UDim2.new(1, -20, 0, 24)
-	subtitle.Text = "Check Progress"
-	subtitle.TextColor3 = COLORS.White
-	subtitle.TextScaled = true
-	subtitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	subtitle.TextStrokeTransparency = 0.55
-	subtitle.Parent = frame
-
-	return billboard
-end
-
-local function createChestStatusBillboard(parent)
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = "ChestStatusBillboard"
-	billboard.AlwaysOnTop = true
-	billboard.MaxDistance = 82
-	billboard.Size = UDim2.new(0, 210, 0, 78)
-	billboard.StudsOffset = Vector3.new(0, 5.1, 0)
-	billboard.Parent = parent
-
-	local frame = Instance.new("Frame")
-	frame.Name = "StatusFrame"
-	frame.BackgroundColor3 = COLORS.Dark
-	frame.BackgroundTransparency = 0.08
-	frame.BorderSizePixel = 0
-	frame.Size = UDim2.fromScale(1, 1)
-	frame.Parent = billboard
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
-	corner.Parent = frame
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Name = "StatusStroke"
-	stroke.Color = COLORS.Gold
-	stroke.Thickness = 2
-	stroke.Transparency = 0.2
-	stroke.Parent = frame
-
-	local title = Instance.new("TextLabel")
-	title.Name = "ChestStatusTitle"
-	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.GothamBlack
-	title.Position = UDim2.new(0, 10, 0, 8)
-	title.Size = UDim2.new(1, -20, 0, 30)
-	title.Text = "CHESTS"
-	title.TextColor3 = COLORS.Gold
-	title.TextScaled = true
-	title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	title.TextStrokeTransparency = 0.35
-	title.Parent = frame
-
-	local subtitle = Instance.new("TextLabel")
-	subtitle.Name = "ChestStatusSubtitle"
-	subtitle.BackgroundTransparency = 1
-	subtitle.Font = Enum.Font.GothamBold
-	subtitle.Position = UDim2.new(0, 10, 0, 43)
-	subtitle.Size = UDim2.new(1, -20, 0, 24)
-	subtitle.Text = "Spend CP for Rewards"
-	subtitle.TextColor3 = COLORS.White
-	subtitle.TextScaled = true
-	subtitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	subtitle.TextStrokeTransparency = 0.55
-	subtitle.Parent = frame
-
-	return billboard
-end
-
-local function createNeonLine(parent, name, size, position, color)
-	return createPart(parent, name, size, position, {
-		Color = color,
-		Material = Enum.Material.Neon,
-		Decorative = true,
-	})
-end
-
-local function createRing(parent, prefix, center, width, depth, color)
-	createNeonLine(parent, prefix .. "_Front", Vector3.new(width, 0.15, 1.2), Vector3.new(center.X, center.Y, center.Z - depth / 2), color)
-	createNeonLine(parent, prefix .. "_Back", Vector3.new(width, 0.15, 1.2), Vector3.new(center.X, center.Y, center.Z + depth / 2), color)
-	createNeonLine(parent, prefix .. "_Left", Vector3.new(1.2, 0.15, depth), Vector3.new(center.X - width / 2, center.Y, center.Z), color)
-	createNeonLine(parent, prefix .. "_Right", Vector3.new(1.2, 0.15, depth), Vector3.new(center.X + width / 2, center.Y, center.Z), color)
-end
-
-local function createPortal(parent, name, position, color, requiredIQ, targetPartName)
-	local model = Instance.new("Model")
-	model.Name = name .. "_Visual"
-	model:SetAttribute("Decorative", true)
-	model.Parent = parent
-
-	createPart(model, name .. "_LeftPillar", Vector3.new(2.2, 18, 2.2), Vector3.new(position.X - 15, 9, position.Z), {
-		Color = color,
-		Material = Enum.Material.Neon,
-		Decorative = true,
-	})
-
-	createPart(model, name .. "_RightPillar", Vector3.new(2.2, 18, 2.2), Vector3.new(position.X + 15, 9, position.Z), {
-		Color = color,
-		Material = Enum.Material.Neon,
-		Decorative = true,
-	})
-
-	createPart(model, name .. "_TopBeam", Vector3.new(32, 2.2, 2.2), Vector3.new(position.X, 18, position.Z), {
-		Color = color,
-		Material = Enum.Material.Neon,
-		Decorative = true,
-	})
-
-	local gate = createPart(parent, name, Vector3.new(34, 18, 4), Vector3.new(position.X, 9, position.Z), {
-		Color = color,
-		Material = Enum.Material.Neon,
-		Transparency = 0.55,
-		CanCollide = false,
-		CanTouch = true,
-		CanQuery = true,
-	})
-	gate:SetAttribute("RequiredIQ", requiredIQ)
-	gate:SetAttribute("TargetPartName", targetPartName)
-	addTag(gate, "IQGate")
-
-	createSign(parent, name .. "_Sign", "IQ " .. tostring(requiredIQ) .. "+", Vector3.new(position.X, 22, position.Z - 2), Vector3.new(24, 5, 0.4), color)
-
-	return gate
-end
-
-local function createPlaceholderGate(parent, name, position, color, label)
-	local model = Instance.new("Model")
-	model.Name = name .. "_Placeholder"
-	model:SetAttribute("Decorative", true)
-	model.Parent = parent
-
-	createPart(model, name .. "_LeftPillar", Vector3.new(2.2, 16, 2.2), Vector3.new(position.X - 14, 8, position.Z), {
-		Color = color,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-
-	createPart(model, name .. "_RightPillar", Vector3.new(2.2, 16, 2.2), Vector3.new(position.X + 14, 8, position.Z), {
-		Color = color,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-
-	createPart(model, name .. "_TopBeam", Vector3.new(30, 2.2, 2.2), Vector3.new(position.X, 16, position.Z), {
-		Color = color,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-
-	createPart(model, name .. "_Door", Vector3.new(30, 16, 3), Vector3.new(position.X, 8, position.Z), {
-		Color = color,
-		Material = Enum.Material.SmoothPlastic,
-		Transparency = 0.35,
-		Decorative = true,
-	})
-
-	createSign(parent, name .. "_Sign", label, Vector3.new(position.X, 21, position.Z - 2), Vector3.new(24, 5, 0.4), color)
-end
-
-local function createNextAreaGate(parent, position)
-	local model = Instance.new("Model")
-	model.Name = "NextAreaGate"
-	model:SetAttribute("Decorative", true)
-	model.Parent = parent
-
-	createPart(model, "NextAreaGateFrame_LeftPost", Vector3.new(3, 17, 3), Vector3.new(position.X - 14, 8.5, position.Z), {
-		Color = COLORS.Blue,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	createPart(model, "NextAreaGateFrame_RightPost", Vector3.new(3, 17, 3), Vector3.new(position.X + 14, 8.5, position.Z), {
-		Color = COLORS.Blue,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	local topFrame = createPart(model, "NextAreaGateFrame_Top", Vector3.new(31, 3, 3), Vector3.new(position.X, 17.5, position.Z), {
-		Color = COLORS.Mint,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	createPart(model, "NextAreaGateFrame_BottomGlow", Vector3.new(29, 0.35, 2), Vector3.new(position.X, 1.15, position.Z - 0.3), {
-		Color = COLORS.Mint,
-		Material = Enum.Material.Neon,
-		Transparency = 0.35,
-		Decorative = true,
-	})
-	local door = createPart(model, "NextAreaGate_Door", Vector3.new(25, 13, 1.2), Vector3.new(position.X, 7.2, position.Z), {
-		Color = Color3.fromRGB(190, 235, 255),
-		Material = Enum.Material.SmoothPlastic,
-		Transparency = 0.45,
-		Decorative = true,
-	})
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.Name = "NextAreaPrompt"
-	prompt.ActionText = "Enter"
-	prompt.ObjectText = "Area 2"
-	prompt.HoldDuration = 0
-	prompt.MaxActivationDistance = 12
-	prompt.RequiresLineOfSight = false
-	prompt.Enabled = true
-	prompt.Parent = door
-
-	createPart(model, "NextAreaLockIcon", Vector3.new(4.5, 4.5, 0.8), Vector3.new(position.X, 9, position.Z - 1), {
-		Color = COLORS.Gold,
-		Material = Enum.Material.SmoothPlastic,
-		Transparency = 0.08,
-		Decorative = true,
-	})
-	createPart(model, "NextAreaLockShackle", Vector3.new(3.2, 2.4, 0.7), Vector3.new(position.X, 12.1, position.Z - 1), {
-		Color = COLORS.Gold,
-		Material = Enum.Material.SmoothPlastic,
-		Transparency = 0.1,
-		Decorative = true,
-	})
-
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = "NextAreaGateBillboard"
-	billboard.AlwaysOnTop = true
-	billboard.MaxDistance = 95
-	billboard.Size = UDim2.new(0, 240, 0, 86)
-	billboard.StudsOffset = Vector3.new(0, 4.8, 0)
-	billboard.Parent = topFrame
-
-	local frame = Instance.new("Frame")
-	frame.Name = "NextAreaGateBillboardFrame"
-	frame.BackgroundColor3 = Color3.fromRGB(16, 28, 34)
-	frame.BackgroundTransparency = 0.08
-	frame.BorderSizePixel = 0
-	frame.Size = UDim2.fromScale(1, 1)
-	frame.Parent = billboard
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 12)
-	corner.Parent = frame
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = COLORS.Mint
-	stroke.Thickness = 2
-	stroke.Transparency = 0.15
-	stroke.Parent = frame
-
-	local title = Instance.new("TextLabel")
-	title.Name = "NextAreaGateTitle"
-	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.GothamBlack
-	title.Position = UDim2.new(0, 12, 0, 8)
-	title.Size = UDim2.new(1, -24, 0, 36)
-	title.Text = "NEXT AREA"
-	title.TextColor3 = COLORS.Mint
-	title.TextScaled = true
-	title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	title.TextStrokeTransparency = 0.35
-	title.Parent = frame
-
-	local subtitle = Instance.new("TextLabel")
-	subtitle.Name = "NextAreaGateSubtitle"
-	subtitle.BackgroundTransparency = 1
-	subtitle.Font = Enum.Font.GothamBold
-	subtitle.Position = UDim2.new(0, 12, 0, 48)
-	subtitle.Size = UDim2.new(1, -24, 0, 28)
-	subtitle.Text = "Coming Soon"
-	subtitle.TextColor3 = COLORS.White
-	subtitle.TextScaled = true
-	subtitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	subtitle.TextStrokeTransparency = 0.55
-	subtitle.Parent = frame
-
-	createSign(parent, "NextAreaGateSign", "AREA 2", Vector3.new(position.X, 23, position.Z - 2), Vector3.new(28, 5, 0.4), COLORS.Mint)
-	createSign(parent, "NextAreaRequirementSign", "Unlock Soon", Vector3.new(position.X, 14, position.Z - 3), Vector3.new(24, 4, 0.4), COLORS.White)
-end
-
-local function createArea2Preview(parent, position)
-	-- Area 2 Preview Freeze v1:
-	-- This is a preview placeholder, not the final Area 2 map.
-	-- Keep Area2ArrivalPad and Area2ReturnPrompt names stable because server movement
-	-- and client prompt wiring resolve them by name. This area provides round-trip
-	-- travel only; do not add CurrentArea, UnlockedAreas, saves, or formal Area 2
-	-- systems here without a separate design pass.
-	--
-	-- Protected preview names:
-	-- Area2PreviewZone, Area2ArrivalPad, Area2ReturnPrompt, Area2ReturnPad
-	-- Area2PreviewBillboard, Area2ReturnBillboard
-	local model = Instance.new("Model")
-	model.Name = "Area2PreviewZone"
-	model:SetAttribute("PreviewOnly", true)
-	model.Parent = parent
-
-	createPart(model, "Area2PlaceholderPlatform", Vector3.new(54, 1, 54), Vector3.new(position.X, position.Y - 0.4, position.Z), {
-		Color = Color3.fromRGB(190, 232, 218),
-		Material = Enum.Material.SmoothPlastic,
-		CanCollide = true,
-		CanTouch = true,
-		CanQuery = true,
-	})
-
-	local arrivalPad = createPart(model, "Area2ArrivalPad", Vector3.new(18, 0.35, 18), Vector3.new(position.X, position.Y + 0.28, position.Z), {
-		Color = COLORS.Mint,
-		Material = Enum.Material.SmoothPlastic,
-		CanCollide = true,
-		CanTouch = true,
-		CanQuery = true,
-	})
-	createPart(model, "Area2ReturnPad", Vector3.new(13, 0.22, 13), Vector3.new(position.X + 17, position.Y + 0.2, position.Z + 13), {
-		Color = Color3.fromRGB(70, 155, 225),
-		Material = Enum.Material.SmoothPlastic,
-		CanCollide = true,
-		CanTouch = true,
-		CanQuery = true,
-	})
-	local returnPart = createPart(model, "Area2ReturnPromptPart", Vector3.new(9, 0.3, 9), Vector3.new(position.X + 17, position.Y + 0.48, position.Z + 13), {
-		Color = COLORS.Blue,
-		Material = Enum.Material.SmoothPlastic,
-		CanCollide = true,
-		CanTouch = true,
-		CanQuery = true,
-	})
-	local returnPrompt = Instance.new("ProximityPrompt")
-	returnPrompt.Name = "Area2ReturnPrompt"
-	returnPrompt.ActionText = "Return"
-	returnPrompt.ObjectText = "Lobby"
-	returnPrompt.HoldDuration = 0
-	returnPrompt.MaxActivationDistance = 12
-	returnPrompt.RequiresLineOfSight = false
-	returnPrompt.Enabled = true
-	returnPrompt.Parent = returnPart
-
-	createPart(model, "Area2PreviewTrim", Vector3.new(58, 0.25, 58), Vector3.new(position.X, position.Y - 0.95, position.Z), {
-		Color = COLORS.Blue,
-		Material = Enum.Material.SmoothPlastic,
-		CanCollide = false,
-		CanTouch = false,
-		CanQuery = false,
-	})
-	createPart(model, "Area2PreviewBoundary_North", Vector3.new(56, 2, 1.2), Vector3.new(position.X, position.Y + 0.75, position.Z - 27), {
-		Color = Color3.fromRGB(95, 180, 225),
-		Material = Enum.Material.SmoothPlastic,
-		CanCollide = true,
-		CanTouch = false,
-		CanQuery = false,
-	})
-	createPart(model, "Area2PreviewBoundary_South", Vector3.new(56, 2, 1.2), Vector3.new(position.X, position.Y + 0.75, position.Z + 27), {
-		Color = Color3.fromRGB(95, 180, 225),
-		Material = Enum.Material.SmoothPlastic,
-		CanCollide = true,
-		CanTouch = false,
-		CanQuery = false,
-	})
-	createPart(model, "Area2PreviewBoundary_West", Vector3.new(1.2, 2, 56), Vector3.new(position.X - 27, position.Y + 0.75, position.Z), {
-		Color = Color3.fromRGB(95, 180, 225),
-		Material = Enum.Material.SmoothPlastic,
-		CanCollide = true,
-		CanTouch = false,
-		CanQuery = false,
-	})
-	createPart(model, "Area2PreviewBoundary_East", Vector3.new(1.2, 2, 56), Vector3.new(position.X + 27, position.Y + 0.75, position.Z), {
-		Color = Color3.fromRGB(95, 180, 225),
-		Material = Enum.Material.SmoothPlastic,
-		CanCollide = true,
-		CanTouch = false,
-		CanQuery = false,
-	})
-
-	local sign = createSign(model, "Area2PreviewSign", "AREA 2 PREVIEW", Vector3.new(position.X, position.Y + 9, position.Z - 24), Vector3.new(32, 5, 0.4), COLORS.Mint)
-
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = "Area2PreviewBillboard"
-	billboard.AlwaysOnTop = true
-	billboard.MaxDistance = 110
-	billboard.Size = UDim2.new(0, 260, 0, 86)
-	billboard.StudsOffset = Vector3.new(0, 4.2, 0)
-	billboard.Parent = arrivalPad
-
-	local frame = Instance.new("Frame")
-	frame.Name = "Area2PreviewBillboardFrame"
-	frame.BackgroundColor3 = Color3.fromRGB(18, 34, 34)
-	frame.BackgroundTransparency = 0.08
-	frame.BorderSizePixel = 0
-	frame.Size = UDim2.fromScale(1, 1)
-	frame.Parent = billboard
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 12)
-	corner.Parent = frame
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = COLORS.Mint
-	stroke.Thickness = 2
-	stroke.Transparency = 0.16
-	stroke.Parent = frame
-
-	local title = Instance.new("TextLabel")
-	title.Name = "Area2PreviewTitle"
-	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.GothamBlack
-	title.Position = UDim2.new(0, 12, 0, 8)
-	title.Size = UDim2.new(1, -24, 0, 34)
-	title.Text = "AREA 2 PREVIEW"
-	title.TextColor3 = COLORS.Mint
-	title.TextScaled = true
-	title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	title.TextStrokeTransparency = 0.35
-	title.Parent = frame
-
-	local subtitle = Instance.new("TextLabel")
-	subtitle.Name = "Area2PreviewSubtitle"
-	subtitle.BackgroundTransparency = 1
-	subtitle.Font = Enum.Font.GothamBold
-	subtitle.Position = UDim2.new(0, 12, 0, 48)
-	subtitle.Size = UDim2.new(1, -24, 0, 28)
-	subtitle.Text = "Full area coming soon"
-	subtitle.TextColor3 = COLORS.White
-	subtitle.TextScaled = true
-	subtitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	subtitle.TextStrokeTransparency = 0.55
-	subtitle.Parent = frame
-
-	local returnBillboard = Instance.new("BillboardGui")
-	returnBillboard.Name = "Area2ReturnBillboard"
-	returnBillboard.AlwaysOnTop = true
-	returnBillboard.MaxDistance = 90
-	returnBillboard.Size = UDim2.new(0, 220, 0, 76)
-	returnBillboard.StudsOffset = Vector3.new(0, 4, 0)
-	returnBillboard.Parent = returnPart
-
-	local returnFrame = Instance.new("Frame")
-	returnFrame.Name = "Area2ReturnBillboardFrame"
-	returnFrame.BackgroundColor3 = Color3.fromRGB(20, 32, 42)
-	returnFrame.BackgroundTransparency = 0.08
-	returnFrame.BorderSizePixel = 0
-	returnFrame.Size = UDim2.fromScale(1, 1)
-	returnFrame.Parent = returnBillboard
-
-	local returnCorner = Instance.new("UICorner")
-	returnCorner.CornerRadius = UDim.new(0, 12)
-	returnCorner.Parent = returnFrame
-
-	local returnStroke = Instance.new("UIStroke")
-	returnStroke.Color = COLORS.Blue
-	returnStroke.Thickness = 2
-	returnStroke.Transparency = 0.18
-	returnStroke.Parent = returnFrame
-
-	local returnTitle = Instance.new("TextLabel")
-	returnTitle.Name = "Area2ReturnTitle"
-	returnTitle.BackgroundTransparency = 1
-	returnTitle.Font = Enum.Font.GothamBlack
-	returnTitle.Position = UDim2.new(0, 10, 0, 7)
-	returnTitle.Size = UDim2.new(1, -20, 0, 30)
-	returnTitle.Text = "RETURN TO LOBBY"
-	returnTitle.TextColor3 = COLORS.White
-	returnTitle.TextScaled = true
-	returnTitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	returnTitle.TextStrokeTransparency = 0.35
-	returnTitle.Parent = returnFrame
-
-	local returnSubtitle = Instance.new("TextLabel")
-	returnSubtitle.Name = "Area2ReturnSubtitle"
-	returnSubtitle.BackgroundTransparency = 1
-	returnSubtitle.Font = Enum.Font.GothamBold
-	returnSubtitle.Position = UDim2.new(0, 10, 0, 42)
-	returnSubtitle.Size = UDim2.new(1, -20, 0, 24)
-	returnSubtitle.Text = "Back to v1 Lobby"
-	returnSubtitle.TextColor3 = Color3.fromRGB(220, 240, 255)
-	returnSubtitle.TextScaled = true
-	returnSubtitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	returnSubtitle.TextStrokeTransparency = 0.55
-	returnSubtitle.Parent = returnFrame
-
-	sign.CFrame = CFrame.lookAt(sign.Position, Vector3.new(position.X, sign.Position.Y, position.Z))
-end
-
-local function createWinPad(parent, name, position, rewardWins, color)
-	local pad = createPart(parent, name, Vector3.new(18, 1, 18), position, {
-		Color = color,
-		Material = Enum.Material.Neon,
-		CanCollide = true,
-		CanTouch = true,
-		CanQuery = true,
-	})
-	pad:SetAttribute("RewardWins", rewardWins)
-	addTag(pad, "WinPad")
-
-	createRing(parent, name .. "_Ring", Vector3.new(position.X, position.Y + 0.7, position.Z), 26, 26, COLORS.Gold)
-	createSign(parent, name .. "_Sign", "+" .. tostring(rewardWins) .. " WINS", Vector3.new(position.X, 12, position.Z - 15), Vector3.new(24, 5, 0.4), COLORS.Gold)
-
-	return pad
-end
-
-local function createZone(parent, name, centerZ, color, label)
-	createPart(parent, name .. "_Floor", Vector3.new(90, 1, 90), Vector3.new(0, 0, centerZ), {
-		Color = color,
-		Material = Enum.Material.Concrete,
-		Reflectance = 0,
-		CanCollide = true,
-		CanTouch = true,
-		CanQuery = true,
-	})
-
-	createPart(parent, name .. "_BorderFront", Vector3.new(90, 0.2, 2), Vector3.new(0, 0.65, centerZ - 45), {
-		Color = COLORS.FloorAlt,
-		Material = Enum.Material.Concrete,
-		Decorative = true,
-	})
-	createPart(parent, name .. "_BorderBack", Vector3.new(90, 0.2, 2), Vector3.new(0, 0.65, centerZ + 45), {
-		Color = COLORS.FloorAlt,
-		Material = Enum.Material.Concrete,
-		Decorative = true,
-	})
-	createPart(parent, name .. "_BorderLeft", Vector3.new(2, 0.2, 90), Vector3.new(-45, 0.65, centerZ), {
-		Color = COLORS.FloorAlt,
-		Material = Enum.Material.Concrete,
-		Decorative = true,
-	})
-	createPart(parent, name .. "_BorderRight", Vector3.new(2, 0.2, 90), Vector3.new(45, 0.65, centerZ), {
-		Color = COLORS.FloorAlt,
-		Material = Enum.Material.Concrete,
-		Decorative = true,
-	})
-	createSign(parent, name .. "_Title", label, Vector3.new(0, 15, centerZ - 38), Vector3.new(34, 6, 0.4), color)
-end
-
-local function createAcademyMarker(parent, name, label, position, color)
-	createPart(parent, name .. "_Pad", Vector3.new(18, 0.8, 18), position, {
-		Color = COLORS.FloorAlt,
-		Material = Enum.Material.Concrete,
-		CanCollide = true,
-		CanTouch = true,
-		CanQuery = true,
-	})
-
-	createPart(parent, name .. "_ColorBar", Vector3.new(16, 0.35, 2), Vector3.new(position.X, position.Y + 0.65, position.Z - 7), {
-		Color = color,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	createSign(parent, name .. "_Sign", label, Vector3.new(position.X, 10, position.Z - 11), Vector3.new(22, 4.5, 0.4), color)
-end
-
-local function createPlaceholderPrompt(parent, actionText, objectText)
-	local prompt = Instance.new("ProximityPrompt")
-	prompt.Name = "PlaceholderPrompt"
-	prompt.ActionText = actionText
-	prompt.ObjectText = objectText
-	prompt.Enabled = false
-	prompt.RequiresLineOfSight = false
-	prompt.MaxActivationDistance = 12
-	prompt.Parent = parent
-	return prompt
-end
-
-local function createRankingBoardGui(board, titleText, accentColor)
-	local gui = Instance.new("SurfaceGui")
-	gui.Name = "RankingWallBoard"
-	gui.Face = Enum.NormalId.Front
-	gui.LightInfluence = 0
-	gui.PixelsPerStud = 70
-	gui.Parent = board
-
-	local frame = Instance.new("Frame")
-	frame.Name = "RankingWallRows"
-	frame.BackgroundColor3 = Color3.fromRGB(12, 15, 20)
+	frame.BackgroundColor3 = Color3.fromRGB(18, 24, 34)
 	frame.BackgroundTransparency = 0.08
 	frame.BorderSizePixel = 0
 	frame.Size = UDim2.fromScale(1, 1)
 	frame.Parent = gui
 
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = accentColor
-	stroke.Thickness = 3
-	stroke.Transparency = 0.18
-	stroke.Parent = frame
-
-	local title = Instance.new("TextLabel")
-	title.Name = "RankingWallTitle"
-	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.GothamBlack
-	title.Position = UDim2.new(0.06, 0, 0.06, 0)
-	title.Size = UDim2.new(0.88, 0, 0.18, 0)
-	title.Text = titleText
-	title.TextColor3 = accentColor
-	title.TextScaled = true
-	title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	title.TextStrokeTransparency = 0.35
-	title.Parent = frame
-
-	local soon = Instance.new("TextLabel")
-	soon.Name = "ComingSoon"
-	soon.BackgroundTransparency = 1
-	soon.Font = Enum.Font.GothamBold
-	soon.Position = UDim2.new(0.08, 0, 0.25, 0)
-	soon.Size = UDim2.new(0.84, 0, 0.13, 0)
-	soon.Text = "Coming Soon"
-	soon.TextColor3 = COLORS.White
-	soon.TextScaled = true
-	soon.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	soon.TextStrokeTransparency = 0.55
-	soon.Parent = frame
-
-	for index = 1, 4 do
-		local row = Instance.new("TextLabel")
-		row.Name = "PlaceholderRow" .. tostring(index)
-		row.BackgroundColor3 = index % 2 == 0 and Color3.fromRGB(22, 26, 34) or Color3.fromRGB(18, 22, 30)
-		row.BackgroundTransparency = 0.12
-		row.BorderSizePixel = 0
-		row.Font = Enum.Font.GothamBold
-		row.Position = UDim2.new(0.08, 0, 0.4 + ((index - 1) * 0.13), 0)
-		row.Size = UDim2.new(0.84, 0, 0.1, 0)
-		row.Text = tostring(index) .. ". ??? - Soon"
-		row.TextColor3 = index == 1 and Color3.fromRGB(255, 235, 150) or Color3.fromRGB(230, 235, 245)
-		row.TextScaled = true
-		row.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-		row.TextStrokeTransparency = 0.7
-		row.Parent = frame
-	end
-
-	return gui
-end
-
-local function createChestStation(parent, position)
-	local station = Instance.new("Model")
-	station.Name = "WorldChestStation"
-	station.Parent = parent
-
-	createAcademyMarker(station, "WorldChestStation", "CHEST", position, COLORS.Gold)
-
-	local chest = createPart(station, "WorldChestModel", Vector3.new(10, 5.5, 7), Vector3.new(position.X, position.Y + 3, position.Z), {
-		Color = Color3.fromRGB(138, 96, 52),
-		Material = Enum.Material.Wood,
-		CanCollide = true,
-		CanTouch = true,
-		CanQuery = true,
-	})
-	createChestStatusBillboard(chest)
-
-	createPart(station, "WorldChestLid", Vector3.new(10.8, 1.3, 7.8), Vector3.new(position.X, position.Y + 6.1, position.Z), {
-		Color = COLORS.Gold,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	createPart(station, "WorldChestBand", Vector3.new(1.2, 6.2, 7.8), Vector3.new(position.X, position.Y + 3.2, position.Z), {
-		Color = COLORS.Gold,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	local promptPart = createPart(station, "ChestPromptPart", Vector3.new(12, 1, 9), Vector3.new(position.X, position.Y + 0.9, position.Z), {
-		Color = Color3.fromRGB(255, 230, 130),
-		Material = Enum.Material.SmoothPlastic,
-		Transparency = 0.55,
-		CanCollide = false,
-		CanTouch = false,
-		CanQuery = true,
-	})
-
-	local chestPrompt = createPlaceholderPrompt(promptPart, "Open Chest", "Basic Chest")
-	chestPrompt.Name = "ChestOpenPrompt"
-	chestPrompt.Enabled = true
-	chestPrompt.HoldDuration = 0
-	chestPrompt.MaxActivationDistance = 12
-	chestPrompt.RequiresLineOfSight = false
-	local readyIcon = createPart(station, "ChestReadyIcon", Vector3.new(1.5, 1.5, 1.5), Vector3.new(position.X + 6.2, position.Y + 7.2, position.Z), {
-		Color = COLORS.Slate,
-		Material = Enum.Material.SmoothPlastic,
-		Transparency = 0.35,
-		Decorative = true,
-	})
-	readyIcon.Shape = Enum.PartType.Ball
-	createSign(parent, "ChestSign", "CHEST", Vector3.new(position.X, 14, position.Z - 12), Vector3.new(24, 5, 0.4), COLORS.Gold)
-end
-
-local function createRankingWall(parent, position)
-	local model = Instance.new("Model")
-	model.Name = "RankingWall"
-	model.Parent = parent
-
-	createPart(model, "RankingWall_Base", Vector3.new(28, 1, 10), position, {
-		Color = COLORS.FloorAlt,
-		Material = Enum.Material.Concrete,
-		CanCollide = true,
-		CanTouch = true,
-		CanQuery = true,
-	})
-	createPart(model, "RankingWall_Back", Vector3.new(30, 15, 2), Vector3.new(position.X, position.Y + 8, position.Z + 4), {
-		Color = COLORS.Dark,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-
-	local boardY = position.Y + 8
-	local boardZ = position.Z + 2.6
-	local topIQBoard = createPart(model, "TopIQBoard", Vector3.new(8, 9, 0.6), Vector3.new(position.X - 9, boardY, boardZ), {
-		Color = Color3.fromRGB(18, 22, 28),
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	local rarestBoard = createPart(model, "RarestBoard", Vector3.new(8, 9, 0.6), Vector3.new(position.X, boardY, boardZ), {
-		Color = Color3.fromRGB(18, 22, 28),
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	local indexBoard = createPart(model, "IndexBoard", Vector3.new(8, 9, 0.6), Vector3.new(position.X + 9, boardY, boardZ), {
-		Color = Color3.fromRGB(18, 22, 28),
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-
-	createRankingBoardGui(topIQBoard, "IQ LEADERBOARD", COLORS.Gold)
-	createRankingBoardGui(rarestBoard, "RAREST FINDS", Color3.fromRGB(255, 150, 220))
-	createRankingBoardGui(indexBoard, "INDEX MASTERS", COLORS.Blue)
-
-	createSign(parent, "RankingWallSign", "TOP GENIUSES", Vector3.new(position.X, position.Y + 18, position.Z + 1.8), Vector3.new(28, 4.5, 0.4), COLORS.Gold)
-	createSign(parent, "TopIQBoardSign", "TOP IQ", Vector3.new(position.X - 9, position.Y + 9, position.Z + 1.6), Vector3.new(7, 3, 0.4), COLORS.White)
-	createSign(parent, "RarestBoardSign", "RAREST", Vector3.new(position.X, position.Y + 9, position.Z + 1.6), Vector3.new(7, 3, 0.4), COLORS.Gold)
-	createSign(parent, "IndexBoardSign", "INDEX", Vector3.new(position.X + 9, position.Y + 9, position.Z + 1.6), Vector3.new(7, 3, 0.4), COLORS.White)
-end
-
-local function createQuestNpc(parent, position)
-	createAcademyMarker(parent, "QuestNpcSpot", "QUEST", position, COLORS.Green)
-
-	local body = createPart(parent, "ProfessorBrain_Body", Vector3.new(4, 6, 3), Vector3.new(position.X, position.Y + 4, position.Z), {
-		Color = COLORS.Blue,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-
-	createPart(parent, "ProfessorBrain_Head", Vector3.new(3.5, 3.5, 3.5), Vector3.new(position.X, position.Y + 8.5, position.Z), {
-		Color = Color3.fromRGB(245, 216, 184),
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-
-	createSign(parent, "ProfessorBrain_Billboard", "QUEST", Vector3.new(position.X, 14, position.Z - 4), Vector3.new(16, 4, 0.4), COLORS.Green)
-	createQuestStatusBillboard(body)
-
-	local readyIcon = createPart(parent, "QuestReadyIcon", Vector3.new(1.4, 1.4, 1.4), Vector3.new(position.X + 3.4, position.Y + 10.5, position.Z), {
-		Color = COLORS.Slate,
-		Material = Enum.Material.SmoothPlastic,
-		Transparency = 0.35,
-		Decorative = true,
-	})
-	readyIcon.Shape = Enum.PartType.Ball
-
-	local questPrompt = createPlaceholderPrompt(body, "Talk", "Quest NPC")
-	questPrompt.Name = "QuestOpenPrompt"
-	questPrompt.Enabled = true
-end
-
-local function createTrainingDummy(parent, position)
-	createAcademyMarker(parent, "TrainingDummySpot", "TRAINING", position, COLORS.Red)
-
-	local area = Instance.new("Model")
-	area.Name = "TrainingDummyArea"
-	area:SetAttribute("Decorative", true)
-	area.Parent = parent
-
-	createPart(area, "TrainingDummyBase", Vector3.new(11, 1, 9), Vector3.new(position.X, position.Y + 0.65, position.Z), {
-		Color = Color3.fromRGB(72, 54, 64),
-		Material = Enum.Material.SmoothPlastic,
-		CanCollide = true,
-		CanTouch = false,
-		CanQuery = true,
-	})
-
-	local dummy = createPart(area, "TrainingDummyBody", Vector3.new(4.5, 7, 3.4), Vector3.new(position.X, position.Y + 5, position.Z), {
-		Color = COLORS.Red,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-
-	createPart(area, "TrainingDummyHead", Vector3.new(3.2, 3.2, 3.2), Vector3.new(position.X, position.Y + 10.3, position.Z), {
-		Color = COLORS.Gold,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-
-	createPart(area, "TrainingDummyLeftArm", Vector3.new(1.2, 5.5, 1.2), Vector3.new(position.X - 3.6, position.Y + 5.6, position.Z), {
-		Color = Color3.fromRGB(190, 72, 100),
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	createPart(area, "TrainingDummyRightArm", Vector3.new(1.2, 5.5, 1.2), Vector3.new(position.X + 3.6, position.Y + 5.6, position.Z), {
-		Color = Color3.fromRGB(190, 72, 100),
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	createPart(area, "TrainingDummyTarget", Vector3.new(2.3, 2.3, 0.35), Vector3.new(position.X, position.Y + 5.7, position.Z - 1.75), {
-		Color = Color3.fromRGB(245, 185, 195),
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = "TrainingDummyBillboard"
-	billboard.AlwaysOnTop = true
-	billboard.MaxDistance = 68
-	billboard.Size = UDim2.new(0, 210, 0, 78)
-	billboard.StudsOffset = Vector3.new(0, 5.3, 0)
-	billboard.Parent = dummy
-
-	local frame = Instance.new("Frame")
-	frame.Name = "TrainingDummyBillboardFrame"
-	frame.BackgroundColor3 = Color3.fromRGB(38, 24, 32)
-	frame.BackgroundTransparency = 0.1
-	frame.BorderSizePixel = 0
-	frame.Size = UDim2.fromScale(1, 1)
-	frame.Parent = billboard
-
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 10)
 	corner.Parent = frame
 
 	local stroke = Instance.new("UIStroke")
-	stroke.Color = COLORS.Red
+	stroke.Name = "StatusStroke"
+	stroke.Color = accentColor
 	stroke.Thickness = 2
-	stroke.Transparency = 0.25
+	stroke.Transparency = 0.18
 	stroke.Parent = frame
 
-	local title = Instance.new("TextLabel")
-	title.Name = "TrainingDummyTitle"
-	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.GothamBlack
-	title.Position = UDim2.new(0, 12, 0, 8)
-	title.Size = UDim2.new(1, -24, 0, 30)
-	title.Text = "TRAINING"
-	title.TextColor3 = COLORS.Red
-	title.TextScaled = true
-	title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	title.TextStrokeTransparency = 0.35
-	title.Parent = frame
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "TitleLabel"
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Font = Enum.Font.GothamBlack
+	titleLabel.Position = UDim2.new(0, 10, 0, 8)
+	titleLabel.Size = UDim2.new(1, -20, 0, 30)
+	titleLabel.Text = title
+	titleLabel.TextColor3 = accentColor
+	titleLabel.TextScaled = true
+	titleLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	titleLabel.TextStrokeTransparency = 0.4
+	titleLabel.Parent = frame
 
-	local subtitle = Instance.new("TextLabel")
-	subtitle.Name = "TrainingDummySubtitle"
-	subtitle.BackgroundTransparency = 1
-	subtitle.Font = Enum.Font.GothamBold
-	subtitle.Position = UDim2.new(0, 12, 0, 42)
-	subtitle.Size = UDim2.new(1, -24, 0, 24)
-	subtitle.Text = "Coming Soon"
-	subtitle.TextColor3 = COLORS.White
-	subtitle.TextScaled = true
-	subtitle.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-	subtitle.TextStrokeTransparency = 0.55
-	subtitle.Parent = frame
+	local subtitleLabel = Instance.new("TextLabel")
+	subtitleLabel.Name = "SubtitleLabel"
+	subtitleLabel.BackgroundTransparency = 1
+	subtitleLabel.Font = Enum.Font.GothamBold
+	subtitleLabel.Position = UDim2.new(0, 10, 0, 43)
+	subtitleLabel.Size = UDim2.new(1, -20, 0, 24)
+	subtitleLabel.Text = subtitle
+	subtitleLabel.TextColor3 = COLORS.WarmWhite
+	subtitleLabel.TextScaled = true
+	subtitleLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	subtitleLabel.TextStrokeTransparency = 0.62
+	subtitleLabel.Parent = frame
+
+	return gui
+end
+
+local function namedBillboardLabels(gui, titleName, subtitleName)
+	local frame = gui:FindFirstChild("StatusFrame")
+	if not frame then
+		return
+	end
+
+	local title = frame:FindFirstChild("TitleLabel")
+	if title then
+		title.Name = titleName
+	end
+
+	local subtitle = frame:FindFirstChild("SubtitleLabel")
+	if subtitle then
+		subtitle.Name = subtitleName
+	end
+end
+
+local function prompt(parent, name, actionText, objectText)
+	local item = Instance.new("ProximityPrompt")
+	item.Name = name
+	item.ActionText = actionText
+	item.ObjectText = objectText
+	item.HoldDuration = 0
+	item.MaxActivationDistance = 12
+	item.RequiresLineOfSight = false
+	item.Enabled = true
+	item.Parent = parent
+	return item
+end
+
+local function makeBench(parent, name, position, orientation)
+	local seat = part(parent, name .. "_Seat", Vector3.new(7, 0.7, 2), position + Vector3.new(0, 1.5, 0), {
+		Color = COLORS.Wood,
+		Material = Enum.Material.Wood,
+		Decorative = true,
+		Orientation = orientation,
+	})
+	part(parent, name .. "_Back", Vector3.new(7, 2.5, 0.6), position + Vector3.new(0, 2.6, 1), {
+		Color = COLORS.Wood,
+		Material = Enum.Material.Wood,
+		Decorative = true,
+		Orientation = orientation,
+	})
+	return seat
+end
+
+local function makeTree(parent, name, position)
+	part(parent, name .. "_Trunk", Vector3.new(2, 8, 2), position + Vector3.new(0, 4, 0), {
+		Color = COLORS.Wood,
+		Material = Enum.Material.Wood,
+		Decorative = true,
+		CastShadow = true,
+	})
+	part(parent, name .. "_Leaves", Vector3.new(8, 8, 8), position + Vector3.new(0, 11, 0), {
+		Color = Color3.fromRGB(76, 142, 72),
+		Material = Enum.Material.Grass,
+		Shape = Enum.PartType.Ball,
+		Decorative = true,
+		CastShadow = true,
+	})
+end
+
+local function makeLamp(parent, name, position)
+	local pole = part(parent, name .. "_Pole", Vector3.new(0.8, 9, 0.8), position + Vector3.new(0, 4.5, 0), {
+		Color = COLORS.Slate,
+		Material = Enum.Material.Metal,
+		Decorative = true,
+	})
+	local head = part(parent, name .. "_Head", Vector3.new(2.2, 1.2, 2.2), position + Vector3.new(0, 9.6, 0), {
+		Color = COLORS.LightBlue,
+		Material = Enum.Material.SmoothPlastic,
+		Decorative = true,
+	})
+	local light = Instance.new("PointLight")
+	light.Name = "SoftCampusLight"
+	light.Color = COLORS.WarmWhite
+	light.Range = 14
+	light.Brightness = 0.65
+	light.Parent = head
+	return pole
+end
+
+local function createWinPad(parent, name, position, rewardWins)
+	local pad = part(parent, name, Vector3.new(12, 0.35, 12), position, {
+		Color = COLORS.ChestGold,
+		Material = Enum.Material.Neon,
+		Transparency = 0.2,
+		CanCollide = true,
+		CanTouch = true,
+		CanQuery = true,
+	})
+	pad:SetAttribute("RewardWins", rewardWins)
+	tag(pad, "WinPad")
+	sign(parent, name .. "_Sign", "+" .. tostring(rewardWins) .. " WINS", position + Vector3.new(0, 8, -8), Vector3.new(18, 4, 0.4), COLORS.ChestGold)
+	return pad
+end
+
+local function createGround(lobby)
+	local ground = lobby.Ground
+	part(ground, "P0_MainGround", Vector3.new(190, 2, 190), Vector3.new(0, -1, 0), {
+		Color = COLORS.GrassGreen,
+		Material = Enum.Material.Grass,
+		CanCollide = true,
+	})
+	part(ground, "P0_CampusBase", Vector3.new(150, 0.3, 150), Vector3.new(0, 0.15, 0), {
+		Color = COLORS.Campus,
+		Material = Enum.Material.Ground,
+		CanCollide = true,
+	})
+	part(ground, "P0_Border_NorthLeft", Vector3.new(64, 0.8, 2), Vector3.new(-43, 0.7, 75), { Color = COLORS.WarmWhite, Material = Enum.Material.Concrete })
+	part(ground, "P0_Border_NorthRight", Vector3.new(64, 0.8, 2), Vector3.new(43, 0.7, 75), { Color = COLORS.WarmWhite, Material = Enum.Material.Concrete })
+	part(ground, "P0_Border_SouthLeft", Vector3.new(54, 0.8, 2), Vector3.new(-48, 0.7, -75), { Color = COLORS.WarmWhite, Material = Enum.Material.Concrete })
+	part(ground, "P0_Border_SouthRight", Vector3.new(54, 0.8, 2), Vector3.new(48, 0.7, -75), { Color = COLORS.WarmWhite, Material = Enum.Material.Concrete })
+	part(ground, "P0_Border_West", Vector3.new(2, 0.8, 150), Vector3.new(-75, 0.7, 0), { Color = COLORS.WarmWhite, Material = Enum.Material.Concrete })
+	part(ground, "P0_Border_East", Vector3.new(2, 0.8, 150), Vector3.new(75, 0.7, 0), { Color = COLORS.WarmWhite, Material = Enum.Material.Concrete })
+end
+
+local function createPaths(lobby)
+	local paths = lobby.Paths
+	part(paths, "P0_Path_SpawnToRoll", Vector3.new(18, 0.4, 58), Vector3.new(0, 0.45, -38), { Color = COLORS.Path, Material = Enum.Material.Concrete })
+	part(paths, "P0_Path_RollToGate", Vector3.new(20, 0.4, 56), Vector3.new(0, 0.45, 36), { Color = COLORS.Path, Material = Enum.Material.Concrete })
+	part(paths, "P0_Path_RollToQuest_A", Vector3.new(24, 0.35, 12), Vector3.new(-20, 0.47, -4), { Color = COLORS.Path, Material = Enum.Material.Concrete, Orientation = Vector3.new(0, -12, 0) })
+	part(paths, "P0_Path_RollToQuest_B", Vector3.new(24, 0.35, 12), Vector3.new(-40, 0.47, 0), { Color = COLORS.Path, Material = Enum.Material.Concrete, Orientation = Vector3.new(0, -6, 0) })
+	part(paths, "P0_Path_RollToQuest_C", Vector3.new(22, 0.35, 12), Vector3.new(-56, 0.47, 2), { Color = COLORS.Path, Material = Enum.Material.Concrete })
+	part(paths, "P0_Path_RollToChest_A", Vector3.new(24, 0.35, 12), Vector3.new(20, 0.47, -3), { Color = COLORS.Path, Material = Enum.Material.Concrete, Orientation = Vector3.new(0, 11, 0) })
+	part(paths, "P0_Path_RollToChest_B", Vector3.new(24, 0.35, 12), Vector3.new(41, 0.47, 1), { Color = COLORS.Path, Material = Enum.Material.Concrete, Orientation = Vector3.new(0, 6, 0) })
+	part(paths, "P0_Path_RollToChest_C", Vector3.new(22, 0.35, 12), Vector3.new(57, 0.47, 2), { Color = COLORS.Path, Material = Enum.Material.Concrete })
+end
+
+local function createSpawn(map, lobby)
+	local area = lobby.SpawnArea
+	part(area, "P0_SpawnPlatform", Vector3.new(38, 1.5, 20), Vector3.new(0, 0.75, -76), { Color = COLORS.WarmWhite })
+	local playerSpawn = part(map, "PlayerSpawn", Vector3.new(10, 0.5, 10), Vector3.new(0, 1.2, -76), {
+		Color = COLORS.LightBlue,
+		Material = Enum.Material.SmoothPlastic,
+		Transparency = 0.35,
+		CanCollide = false,
+		CanTouch = false,
+		CanQuery = true,
+	})
+
+	local spawn = Instance.new("SpawnLocation")
+	spawn.Name = "SpawnLocation"
+	spawn.Position = Vector3.new(0, 2, -76)
+	spawn.Size = Vector3.new(8, 1, 8)
+	spawn.Anchored = true
+	spawn.Transparency = 1
+	spawn.CanCollide = false
+	spawn.CanTouch = false
+	spawn.CanQuery = false
+	spawn.Neutral = true
+	spawn.Duration = 0
+	spawn.Parent = map
+
+	part(area, "P0_SpawnArch_Left", Vector3.new(4, 16, 4), Vector3.new(-17, 8, -87), { Color = COLORS.WarmWhite })
+	part(area, "P0_SpawnArch_Right", Vector3.new(4, 16, 4), Vector3.new(17, 8, -87), { Color = COLORS.WarmWhite })
+	part(area, "P0_SpawnArch_Top", Vector3.new(38, 4, 4), Vector3.new(0, 16, -87), { Color = COLORS.WarmWhite })
+	sign(area, "P0_SpawnArch_Sign", "BRAIN RNG SCHOOL", Vector3.new(0, 19.5, -89.2), Vector3.new(34, 4, 0.4), COLORS.SchoolBlue)
+
+	return playerSpawn
+end
+
+local function createRollArea(map, lobby)
+	local area = lobby.RollArea
+	part(area, "P0_RollPlaza_Base", Vector3.new(42, 1.6, 42), Vector3.new(0, 0.8, 0), { Color = COLORS.WarmWhite })
+	part(area, "P0_RollPlaza_Trim_N", Vector3.new(42, 0.4, 2), Vector3.new(0, 1.8, 21), { Color = COLORS.LightBlue, Decorative = true })
+	part(area, "P0_RollPlaza_Trim_S", Vector3.new(42, 0.4, 2), Vector3.new(0, 1.8, -21), { Color = COLORS.LightBlue, Decorative = true })
+	part(area, "P0_RollPlaza_Trim_E", Vector3.new(2, 0.4, 42), Vector3.new(21, 1.8, 0), { Color = COLORS.LightBlue, Decorative = true })
+	part(area, "P0_RollPlaza_Trim_W", Vector3.new(2, 0.4, 42), Vector3.new(-21, 1.8, 0), { Color = COLORS.LightBlue, Decorative = true })
+	part(area, "P0_RollPedestal_Lower", Vector3.new(16, 2.5, 16), Vector3.new(0, 2.1, 0), { Color = COLORS.SchoolBlue })
+	part(area, "P0_RollPedestal_Upper", Vector3.new(11, 1.4, 11), Vector3.new(0, 4, 0), { Color = Color3.fromRGB(234, 241, 250) })
+
+	local rollButton = part(map, "RollButton", Vector3.new(8, 1.4, 8), Vector3.new(0, 5.3, 0), {
+		Color = COLORS.RollLime,
+		Material = Enum.Material.Neon,
+		CanCollide = true,
+		CanQuery = true,
+		Shape = Enum.PartType.Cylinder,
+		Orientation = Vector3.new(0, 0, 90),
+	})
+	rollButton:SetAttribute("VisualOnly", true)
+	billboard(rollButton, "RollButtonBillboard", "ROLL IQ", "TAP TO GROW", COLORS.RollLime, Vector3.new(0, 6, 0))
+
+	part(area, "P0_BookDecor_A", Vector3.new(6, 0.5, 4), Vector3.new(-14, 2.2, 13), { Color = COLORS.QuestYellow, Decorative = true })
+	part(area, "P0_BookDecor_B", Vector3.new(5, 0.45, 3.5), Vector3.new(14, 2.15, 13), { Color = COLORS.ResearchPurple, Decorative = true, Orientation = Vector3.new(0, 12, 0) })
+	makeBench(area, "P0_RollBench_Left", Vector3.new(-17, 0, -13), Vector3.new(0, 20, 0))
+	makeBench(area, "P0_RollBench_Right", Vector3.new(17, 0, -13), Vector3.new(0, -20, 0))
+end
+
+local function createGateArea(map, lobby)
+	local area = lobby.GateArea
+	part(area, "P0_GatePlatform", Vector3.new(46, 1.6, 28), Vector3.new(0, 0.8, 68), { Color = COLORS.WarmWhite })
+	part(area, "P0_Gate_LeftPillar", Vector3.new(6, 20, 6), Vector3.new(-18, 10, 68), { Color = COLORS.SchoolBlue })
+	part(area, "P0_Gate_RightPillar", Vector3.new(6, 20, 6), Vector3.new(18, 10, 68), { Color = COLORS.SchoolBlue })
+	part(area, "P0_Gate_TopBeam", Vector3.new(42, 6, 6), Vector3.new(0, 21, 68), { Color = COLORS.LightBlue })
+
+	local gate = Instance.new("Model")
+	gate.Name = "NextAreaGate"
+	gate.Parent = map
+	local door = part(gate, "NextAreaGate_Door", Vector3.new(25, 18, 2), Vector3.new(0, 10, 68), {
+		Color = Color3.fromRGB(100, 180, 255),
+		Material = Enum.Material.Neon,
+		Transparency = 0.42,
+		CanCollide = false,
+		CanTouch = false,
+		CanQuery = true,
+	})
+	prompt(door, "NextAreaPrompt", "Enter", "Elementary School")
+	part(gate, "NextAreaGateFrame_BottomGlow", Vector3.new(29, 0.35, 2), Vector3.new(0, 1.25, 67), {
+		Color = COLORS.LightBlue,
+		Material = Enum.Material.Neon,
+		Transparency = 0.45,
+		Decorative = true,
+	})
+	part(gate, "NextAreaLockIcon", Vector3.new(4.5, 4.5, 0.8), Vector3.new(0, 9, 66.6), {
+		Color = COLORS.ChestGold,
+		Transparency = 0.12,
+		Decorative = true,
+	})
+	local top = part(gate, "NextAreaGateBillboardMount", Vector3.new(8, 1, 1), Vector3.new(0, 24, 67), { Color = COLORS.LightBlue, Decorative = true })
+	local gui = billboard(top, "NextAreaGateBillboard", "ELEMENTARY SCHOOL", "REQUIRED IQ 80.500", COLORS.LightBlue, Vector3.new(0, 2.8, 0))
+	gui.Name = "NextAreaGateBillboard"
+	namedBillboardLabels(gui, "NextAreaGateTitle", "NextAreaGateSubtitle")
+
+	sign(area, "P0_GateRequirementSign", "LOCKED - REQUIRED IQ 80.500", Vector3.new(0, 27, 64), Vector3.new(36, 4, 0.4), COLORS.ChestGold)
+	part(area, "P0_GateSchoolPreview", Vector3.new(70, 28, 4), Vector3.new(0, 14, 87), {
+		Color = Color3.fromRGB(226, 235, 245),
+		Material = Enum.Material.SmoothPlastic,
+		Transparency = 0.08,
+		Decorative = true,
+	})
+end
+
+local function createQuestArea(map, lobby)
+	local area = lobby.QuestArea
+	part(area, "P0_QuestBase", Vector3.new(36, 1.6, 30), Vector3.new(-62, 0.8, 2), { Color = COLORS.WarmWhite })
+	local board = part(area, "P0_QuestBoard", Vector3.new(2, 16, 28), Vector3.new(-72, 9, 2), {
+		Color = COLORS.Wood,
+		Material = Enum.Material.Wood,
+		Decorative = true,
+		Orientation = Vector3.new(0, 90, 0),
+	})
+	surfaceText(board, "QuestBoardText", "QUESTS\nHOMEWORK BOARD\n\nROLL 10 TIMES\nFIND A RARE CONCEPT\nOPEN A CHEST", COLORS.QuestYellow)
+
+	local body = part(map, "ProfessorBrain_Body", Vector3.new(4, 6, 3), Vector3.new(-62, 4.3, 10), {
+		Color = COLORS.SchoolBlue,
+		CanCollide = false,
+		CanQuery = true,
+	})
+	part(map, "ProfessorBrain_Head", Vector3.new(3.5, 3.5, 3.5), Vector3.new(-62, 9.1, 10), {
+		Color = Color3.fromRGB(245, 216, 184),
+		Shape = Enum.PartType.Ball,
+		Decorative = true,
+	})
+	prompt(body, "QuestOpenPrompt", "Talk", "Quest Board")
+	local questGui = billboard(body, "QuestStatusBillboard", "QUESTS", "Check Progress", COLORS.QuestYellow, Vector3.new(0, 5.2, 0))
+	namedBillboardLabels(questGui, "QuestStatusTitle", "QuestStatusSubtitle")
+	local readyIcon = part(map, "QuestReadyIcon", Vector3.new(1.4, 1.4, 1.4), Vector3.new(-58.5, 11, 10), {
+		Color = COLORS.Slate,
+		Shape = Enum.PartType.Ball,
+		Transparency = 0.35,
+		Decorative = true,
+	})
+	readyIcon.Name = "QuestReadyIcon"
+
+	for index = 1, 5 do
+		part(area, "P0_QuestPaper_" .. tostring(index), Vector3.new(0.25, 3.2, 3.8), Vector3.new(-73.1, 5.5 + index, -9 + (index * 3.5)), {
+			Color = Color3.fromRGB(255, 246, 210),
+			Material = Enum.Material.SmoothPlastic,
+			Decorative = true,
+			Orientation = Vector3.new(0, 90, index % 2 == 0 and 4 or -4),
+		})
+	end
+	makeBench(area, "P0_QuestBench_A", Vector3.new(-55, 0, -12), Vector3.new(0, 12, 0))
+	makeBench(area, "P0_QuestBench_B", Vector3.new(-52, 0, 17), Vector3.new(0, -20, 0))
+end
+
+local function createChestArea(map, lobby)
+	local area = lobby.ChestArea
+	part(area, "P0_ChestBase", Vector3.new(38, 1.6, 30), Vector3.new(62, 0.8, 2), { Color = COLORS.WarmWhite })
+	for _, offset in ipairs({ -16, 16 }) do
+		part(area, "P0_ChestCanopy_Post_" .. tostring(offset), Vector3.new(3, 13, 3), Vector3.new(62 + offset, 7, -11), { Color = COLORS.SchoolBlue })
+		part(area, "P0_ChestCanopy_BackPost_" .. tostring(offset), Vector3.new(3, 13, 3), Vector3.new(62 + offset, 7, 15), { Color = COLORS.SchoolBlue })
+	end
+	part(area, "P0_ChestCanopy_Roof", Vector3.new(40, 2, 30), Vector3.new(62, 14, 2), { Color = COLORS.LightBlue, Decorative = true })
+
+	local station = Instance.new("Model")
+	station.Name = "WorldChestStation"
+	station.Parent = map
+	part(station, "P0_BasicChestPedestal", Vector3.new(8, 3, 8), Vector3.new(52, 2.5, 2), { Color = COLORS.ChestGold })
+	part(area, "P0_RareChestPedestal", Vector3.new(8, 3, 8), Vector3.new(62, 2.5, 2), { Color = COLORS.ResearchPurple })
+	part(area, "P0_EpicChestPedestal", Vector3.new(8, 3, 8), Vector3.new(72, 2.5, 2), { Color = Color3.fromRGB(255, 222, 110) })
+
+	local chest = part(station, "WorldChestModel", Vector3.new(9, 5, 7), Vector3.new(52, 6, 2), {
+		Color = COLORS.Wood,
+		Material = Enum.Material.Wood,
+		CanCollide = true,
+		CanQuery = true,
+	})
+	local chestGui = billboard(chest, "ChestStatusBillboard", "CHESTS", "Spend CP for Rewards", COLORS.ChestGold, Vector3.new(0, 5, 0))
+	namedBillboardLabels(chestGui, "ChestStatusTitle", "ChestStatusSubtitle")
+	part(station, "WorldChestLid", Vector3.new(10, 1.2, 7.8), Vector3.new(52, 8.9, 2), { Color = COLORS.ChestGold, Decorative = true })
+	part(station, "WorldChestBand", Vector3.new(1.1, 5.8, 7.8), Vector3.new(52, 6.2, 2), { Color = COLORS.ChestGold, Decorative = true })
+	local promptPart = part(station, "ChestPromptPart", Vector3.new(12, 1, 9), Vector3.new(52, 3.95, 2), {
+		Color = Color3.fromRGB(255, 230, 130),
+		Transparency = 1,
+		CanCollide = false,
+		CanQuery = true,
+	})
+	prompt(promptPart, "ChestOpenPrompt", "Open Chest", "Basic Chest")
+	local icon = part(station, "ChestReadyIcon", Vector3.new(1.5, 1.5, 1.5), Vector3.new(58, 10.2, 2), {
+		Color = COLORS.Slate,
+		Shape = Enum.PartType.Ball,
+		Transparency = 0.35,
+		Decorative = true,
+	})
+	icon.Name = "ChestReadyIcon"
+
+	sign(area, "P0_ChestSign", "KNOWLEDGE CHESTS\nBASIC OPEN\nRARE / EPIC COMING SOON", Vector3.new(62, 17, -14), Vector3.new(32, 5, 0.4), COLORS.ChestGold)
+end
+
+local function createResearchArea(lobby)
+	local area = lobby.ResearchArea
+	part(area, "P0_ResearchBase", Vector3.new(48, 1.4, 22), Vector3.new(0, 0.7, -52), { Color = COLORS.WarmWhite })
+	local board = part(area, "P0_ResearchBoard", Vector3.new(34, 15, 2), Vector3.new(0, 9, -60), { Color = COLORS.ResearchPurple, Decorative = true })
+	surfaceText(board, "ResearchBoardText", "RESEARCH\nCONCEPT INDEX\nTITLES\nUNLOCKS AFTER EARLY PROGRESS", COLORS.WarmWhite)
+	part(area, "P0_ResearchBook_A", Vector3.new(8, 1, 5), Vector3.new(-14, 2, -49), { Color = COLORS.SchoolBlue, Decorative = true })
+	part(area, "P0_ResearchBook_B", Vector3.new(8, 1, 5), Vector3.new(0, 2, -48), { Color = COLORS.QuestYellow, Decorative = true, Orientation = Vector3.new(0, 12, 0) })
+	part(area, "P0_ResearchFlask_A", Vector3.new(2.5, 4, 2.5), Vector3.new(13, 3.3, -49), { Color = COLORS.LightBlue, Transparency = 0.25, Decorative = true })
+end
+
+local function createRankingAndShop(lobby)
+	local ranking = lobby.RankingArea
+	part(ranking, "P0_RankingBase", Vector3.new(34, 1.2, 18), Vector3.new(-65, 0.6, -50), { Color = COLORS.WarmWhite })
+	local wall = part(ranking, "P0_RankingWall", Vector3.new(30, 18, 2), Vector3.new(-65, 9, -55), { Color = COLORS.Slate, Decorative = true })
+	surfaceText(wall, "RankingWallText", "TOP GENIUSES\n\n1st  - SERVER TOP\n2nd - COMING SOON\n3rd  - COMING SOON", COLORS.ChestGold)
+
+	local shop = lobby.ShopArea
+	part(shop, "P0_ShopBase", Vector3.new(28, 1.2, 18), Vector3.new(65, 0.6, -50), { Color = COLORS.WarmWhite })
+	part(shop, "P0_ShopBack", Vector3.new(28, 15, 2), Vector3.new(65, 7.5, -59), { Color = COLORS.LightBlue, Decorative = true })
+	part(shop, "P0_ShopCounter", Vector3.new(20, 3, 3), Vector3.new(65, 2.4, -46), { Color = COLORS.SchoolBlue, Decorative = true })
+	sign(shop, "P0_ShopSign", "SCHOOL SHOP\nBOOSTS\nCOMING SOON", Vector3.new(65, 15.8, -60), Vector3.new(24, 4.5, 0.4), COLORS.RollLime)
+end
+
+local function createAttendance(lobby)
+	local area = lobby.AttendanceArea
+	part(area, "P0_AttendanceBase", Vector3.new(16, 1, 12), Vector3.new(25, 0.5, -68), { Color = COLORS.WarmWhite })
+	local board = part(area, "P0_AttendanceBoard", Vector3.new(14, 9, 1.5), Vector3.new(25, 5.5, -72), { Color = COLORS.QuestYellow, Decorative = true })
+	surfaceText(board, "AttendanceText", "DAILY ATTENDANCE\nCOMING SOON", COLORS.DarkText)
+end
+
+local function createDecorations(lobby)
+	local decorations = lobby.Decorations
+	for index, pos in ipairs({
+		Vector3.new(-84, 0, -84), Vector3.new(84, 0, -84), Vector3.new(-84, 0, 84), Vector3.new(84, 0, 84),
+		Vector3.new(-46, 0, -72), Vector3.new(46, 0, -72), Vector3.new(-72, 0, 38), Vector3.new(72, 0, 38),
+		Vector3.new(-42, 0, 42), Vector3.new(42, 0, 42), Vector3.new(-28, 0, -26), Vector3.new(28, 0, -26),
+	}) do
+		makeTree(decorations, "P0_Tree_" .. tostring(index), pos)
+	end
+
+	for index, pos in ipairs({
+		Vector3.new(-14, 0, -38), Vector3.new(14, 0, -38), Vector3.new(-24, 0, 18), Vector3.new(24, 0, 18),
+		Vector3.new(-54, 0, -13), Vector3.new(54, 0, -13), Vector3.new(-73, 0, 32), Vector3.new(73, 0, 32),
+	}) do
+		makeBench(decorations, "P0_Bench_" .. tostring(index), pos, Vector3.new(0, index % 2 == 0 and 20 or -20, 0))
+	end
+
+	for index, pos in ipairs({
+		Vector3.new(-12, 0, -63), Vector3.new(12, 0, -63), Vector3.new(-18, 0, 28), Vector3.new(18, 0, 28),
+		Vector3.new(-51, 0, -23), Vector3.new(51, 0, -23), Vector3.new(-78, 0, 5), Vector3.new(78, 0, 5),
+		Vector3.new(-34, 0, 62), Vector3.new(34, 0, 62),
+	}) do
+		makeLamp(decorations, "P0_Lamp_" .. tostring(index), pos)
+	end
+end
+
+local function createArea2Preview(map)
+	local zone = Instance.new("Model")
+	zone.Name = "Area2PreviewZone"
+	zone:SetAttribute("PreviewOnly", true)
+	zone.Parent = map
+
+	local position = Vector3.new(600, 1, 0)
+	part(zone, "Area2PlaceholderPlatform", Vector3.new(54, 1, 54), Vector3.new(position.X, position.Y - 0.4, position.Z), { Color = Color3.fromRGB(190, 232, 218) })
+	part(zone, "Area2ArrivalPad", Vector3.new(18, 0.35, 18), Vector3.new(position.X, position.Y + 0.28, position.Z), { Color = COLORS.LightBlue })
+	part(zone, "Area2ReturnPad", Vector3.new(13, 0.22, 13), Vector3.new(position.X + 17, position.Y + 0.2, position.Z + 13), { Color = COLORS.SchoolBlue })
+	local promptPart = part(zone, "Area2ReturnPromptPart", Vector3.new(9, 0.3, 9), Vector3.new(position.X + 17, position.Y + 0.48, position.Z + 13), {
+		Color = COLORS.SchoolBlue,
+		CanQuery = true,
+	})
+	prompt(promptPart, "Area2ReturnPrompt", "Return", "Lobby")
+	billboard(promptPart, "Area2ReturnBillboard", "RETURN", "Back to Lobby", COLORS.LightBlue)
 end
 
 local function setupLighting()
-	Lighting.Brightness = 2.8
 	Lighting.ClockTime = 14
+	Lighting.Brightness = 2.2
 	Lighting.GlobalShadows = true
-	Lighting.Ambient = Color3.fromRGB(130, 135, 155)
-	Lighting.OutdoorAmbient = Color3.fromRGB(150, 155, 175)
+	Lighting.ShadowSoftness = 0.35
+	Lighting.Ambient = Color3.fromRGB(120, 125, 135)
+	Lighting.OutdoorAmbient = Color3.fromRGB(150, 155, 165)
+	Lighting.EnvironmentDiffuseScale = 0.35
+	Lighting.EnvironmentSpecularScale = 0.25
 
-	local bloom = Lighting:FindFirstChild("BrainRNG_Bloom") or Instance.new("BloomEffect")
-	bloom.Name = "BrainRNG_Bloom"
-	bloom.Intensity = 0.12
-	bloom.Size = 24
-	bloom.Threshold = 1.05
-	bloom.Parent = Lighting
+	local atmosphere = Lighting:FindFirstChild("BrainRNG_Atmosphere") or Instance.new("Atmosphere")
+	atmosphere.Name = "BrainRNG_Atmosphere"
+	atmosphere.Density = 0.18
+	atmosphere.Haze = 0.75
+	atmosphere.Parent = Lighting
 
 	local color = Lighting:FindFirstChild("BrainRNG_ColorCorrection") or Instance.new("ColorCorrectionEffect")
 	color.Name = "BrainRNG_ColorCorrection"
-	color.Brightness = 0.04
-	color.Contrast = 0.12
-	color.Saturation = 0.12
+	color.Brightness = 0.02
+	color.Contrast = 0.05
+	color.Saturation = 0.05
 	color.Parent = Lighting
+
+	local bloom = Lighting:FindFirstChild("BrainRNG_Bloom") or Instance.new("BloomEffect")
+	bloom.Name = "BrainRNG_Bloom"
+	bloom.Intensity = 0.08
+	bloom.Size = 18
+	bloom.Threshold = 1.1
+	bloom.Parent = Lighting
+end
+
+local function createLobbyFolders(map)
+	local world = folder(map, "World")
+	local root = folder(world, LOBBY_NAME)
+	local lobby = {
+		Root = root,
+	}
+
+	for _, name in ipairs({
+		"Ground",
+		"SpawnArea",
+		"RollArea",
+		"GateArea",
+		"QuestArea",
+		"ChestArea",
+		"ResearchArea",
+		"RankingArea",
+		"ShopArea",
+		"AttendanceArea",
+		"Paths",
+		"Decorations",
+		"InteractionZones",
+		"Debug",
+	}) do
+		lobby[name] = folder(root, name)
+	end
+
+	return lobby
 end
 
 function SimpleWorldBuilder.CreateMap()
@@ -1017,151 +629,25 @@ function SimpleWorldBuilder.CreateMap()
 		oldMap:Destroy()
 	end
 
-	local map = createFolder(Workspace, MAP_NAME)
+	local map = folder(Workspace, MAP_NAME)
+	map:SetAttribute("Theme", "Prestige0SchoolLobby")
 
-	createPart(map, "LobbyGrass", Vector3.new(118, 0.6, 118), Vector3.new(0, -0.25, 0), {
-		Color = COLORS.Grass,
-		Material = Enum.Material.Grass,
-		CanCollide = true,
-		CanTouch = true,
-		CanQuery = true,
-	})
-	createZone(map, "SimulatorLobby", 0, COLORS.Floor, "SIMULATOR LOBBY")
+	local lobby = createLobbyFolders(map)
+	createGround(lobby)
+	createPaths(lobby)
+	createSpawn(map, lobby)
+	createRollArea(map, lobby)
+	createGateArea(map, lobby)
+	createQuestArea(map, lobby)
+	createChestArea(map, lobby)
+	createResearchArea(lobby)
+	createRankingAndShop(lobby)
+	createAttendance(lobby)
+	createDecorations(lobby)
+	createArea2Preview(map)
+	createWinPad(map, "WinPad_Plaza", Vector3.new(22, 1, 34), 1)
 
-	local spawnPart = createPart(map, "PlayerSpawn", Vector3.new(14, 1, 14), Vector3.new(0, 0.6, 0), {
-		Color = COLORS.Blue,
-		Material = Enum.Material.SmoothPlastic,
-		CanCollide = true,
-		CanTouch = true,
-		CanQuery = true,
-	})
-
-	local spawnLocation = Instance.new("SpawnLocation")
-	spawnLocation.Name = "SpawnLocation"
-	spawnLocation.Size = Vector3.new(12, 1, 12)
-	spawnLocation.Position = spawnPart.Position + Vector3.new(0, 1, 0)
-	spawnLocation.Anchored = true
-	spawnLocation.Transparency = 1
-	spawnLocation.CanCollide = false
-	spawnLocation.CanTouch = false
-	spawnLocation.CanQuery = false
-	spawnLocation.Neutral = true
-	spawnLocation.Parent = map
-
-	createPart(map, "MainPath_North", Vector3.new(12, 0.25, 46), Vector3.new(0, 0.72, -22), {
-		Color = COLORS.FloorAlt,
-		Material = Enum.Material.Concrete,
-		Decorative = true,
-	})
-	createPart(map, "MainPath_South", Vector3.new(12, 0.25, 32), Vector3.new(0, 0.72, 25), {
-		Color = COLORS.FloorAlt,
-		Material = Enum.Material.Concrete,
-		Decorative = true,
-	})
-	createPart(map, "MainPath_West", Vector3.new(36, 0.25, 10), Vector3.new(-22, 0.72, -4), {
-		Color = COLORS.FloorAlt,
-		Material = Enum.Material.Concrete,
-		Decorative = true,
-	})
-	createPart(map, "MainPath_East", Vector3.new(36, 0.25, 10), Vector3.new(22, 0.72, -4), {
-		Color = COLORS.FloorAlt,
-		Material = Enum.Material.Concrete,
-		Decorative = true,
-	})
-
-	createPart(map, "RollPlatform", Vector3.new(22, 1, 18), Vector3.new(0, 0.9, -24), {
-		Color = COLORS.Blue,
-		Material = Enum.Material.SmoothPlastic,
-		CanCollide = true,
-		CanTouch = true,
-		CanQuery = true,
-	})
-	createPart(map, "RollPlatform_InnerTile", Vector3.new(16, 0.3, 12), Vector3.new(0, 1.45, -24), {
-		Color = Color3.fromRGB(235, 248, 255),
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	createPart(map, "RollPlatform_FrontEdge", Vector3.new(24, 0.6, 1), Vector3.new(0, 1.6, -33), {
-		Color = COLORS.White,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	createPart(map, "RollPlatform_BackEdge", Vector3.new(24, 0.6, 1), Vector3.new(0, 1.6, -15), {
-		Color = COLORS.White,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	createPart(map, "RollPlatform_LeftEdge", Vector3.new(1, 0.6, 18), Vector3.new(-11.5, 1.6, -24), {
-		Color = COLORS.White,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	createPart(map, "RollPlatform_RightEdge", Vector3.new(1, 0.6, 18), Vector3.new(11.5, 1.6, -24), {
-		Color = COLORS.White,
-		Material = Enum.Material.SmoothPlastic,
-		Decorative = true,
-	})
-	createSign(map, "RollPlatform_Sign", "ROLL", Vector3.new(0, 12, -39), Vector3.new(28, 5.5, 0.4), COLORS.Blue)
-
-	-- v1 Lobby Freeze:
-	-- This is the approved simulator lobby layout. Keep these object names stable because
-	-- UIController resolves several world objects by name for prompts, billboards, and chest animation.
-	-- Position/visual polish is allowed, but do not mix lobby polish with saves, rewards,
-	-- ranking data, training rewards, teleport/unlock logic, or new persistence fields.
-	--
-	-- Protected world names:
-	-- ProfessorBrain_Body, QuestStatusBillboard, QuestReadyIcon
-	-- WorldChestStation, WorldChestModel, ChestStatusBillboard, ChestReadyIcon
-	-- RankingWall, TopIQBoard, RarestBoard, IndexBoard
-	-- NextAreaGate, NextAreaGateBillboard, NextAreaLockIcon
-	-- TrainingDummyArea, TrainingDummyBillboard
-	--
-	-- v1 Lobby QA checklist before approval:
-	-- Spawn can distinguish Quest, Chest, Gate, Ranking, and Training at a glance.
-	-- Billboards do not overlap, glow/neon is restrained, and main paths are not blocked.
-	-- Placeholder content keeps Coming Soon/Soon wording.
-	-- UIController loads without local register errors and Output has no red errors.
-	createRankingWall(map, Vector3.new(-42, 1, -30))
-	createAcademyMarker(map, "AchievementBoard", "ACHIEVEMENT", Vector3.new(34, 1, 12), COLORS.Purple)
-	createChestStation(map, Vector3.new(34, 1, -20))
-	createQuestNpc(map, Vector3.new(-34, 1, 12))
-	createTrainingDummy(map, Vector3.new(0, 1, 34))
-
-	createNextAreaGate(map, Vector3.new(0, 0, -62))
-	createArea2Preview(map, Vector3.new(600, 1, 0))
-	createPart(map, "Zone2_Target", Vector3.new(8, 1, 8), Vector3.new(0, 0.6, 92), {
-		Color = COLORS.Mint,
-		Material = Enum.Material.Neon,
-		Transparency = 0.35,
-		CanCollide = false,
-		CanTouch = false,
-		CanQuery = true,
-	})
-
-	createSign(map, "Plaza_Info_Sign", "ROLL  QUEST  CHEST  INDEX", Vector3.new(0, 12, 18), Vector3.new(34, 4.5, 0.4), COLORS.White)
-	createWinPad(map, "WinPad_Plaza", Vector3.new(22, 1, 34), 1, COLORS.Gold)
-
-	createZone(map, "LegacyZone2", 130, COLORS.Blue, "ZONE 2 ARCHIVE")
-	createWinPad(map, "WinPad_Zone2", Vector3.new(28, 1, 145), 3, COLORS.Gold)
-
-	createPortal(map, "Gate_Zone3", Vector3.new(0, 0, 185), COLORS.Purple, 2500, "Zone3_Target")
-	createPart(map, "Zone3_Target", Vector3.new(8, 1, 8), Vector3.new(0, 0.6, 222), {
-		Color = COLORS.Purple,
-		Material = Enum.Material.Neon,
-		Transparency = 0.35,
-		CanCollide = false,
-		CanTouch = false,
-		CanQuery = true,
-	})
-
-	createZone(map, "LegacyZone3", 260, COLORS.Purple, "ZONE 3 ARCHIVE")
-	createWinPad(map, "WinPad_Zone3", Vector3.new(28, 1, 275), 10, COLORS.Gold)
-
-	createSign(map, "Legacy_Info_Sign", "LEGACY TRAINING AREA", Vector3.new(-28, 14, 110), Vector3.new(30, 5, 0.4), COLORS.Pink)
-	createSign(map, "Rebirth_ComingSoon_Sign", "REBIRTH SOON", Vector3.new(-28, 14, 275), Vector3.new(30, 5, 0.4), COLORS.White)
-
-	print("[SimpleWorldBuilder] Simple simulator lobby greybox created. Children:", #map:GetChildren())
-
+	print("[SimpleWorldBuilder] Prestige 0 school lobby created. Children:", #map:GetChildren())
 	return map
 end
 
