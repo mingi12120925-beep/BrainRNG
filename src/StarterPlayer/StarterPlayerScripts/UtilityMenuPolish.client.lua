@@ -13,6 +13,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 local UI_NAME = "BrainRNG_UI"
 local FIND_TIMEOUT_SECONDS = 30
 local RESPONSIVE_SCALE_NAME = "ResponsiveUILayoutScale"
+local MENU_TEXT_COLOR = Color3.fromRGB(10, 35, 20)
 
 local BUTTON_NAMES = {
 	"IndexButton",
@@ -89,6 +90,8 @@ local activeGui = nil
 local activeGuiConnection = nil
 local cameraViewportConnection = nil
 local lastMode = nil
+local buttonTextConnections = setmetatable({}, { __mode = "k" })
+local applyPolish
 
 local function resolveMode(viewport)
 	if viewport.Y <= 500 then
@@ -133,7 +136,7 @@ local function restoreNativeScale(guiObject)
 	end
 end
 
-local function sharpenText(textObject, textSize)
+local function sharpenText(textObject, textSize, textColor)
 	if not textObject or not (textObject:IsA("TextLabel") or textObject:IsA("TextButton")) then
 		return
 	end
@@ -142,6 +145,29 @@ local function sharpenText(textObject, textSize)
 	textObject.TextSize = textSize
 	textObject.Font = Enum.Font.GothamBold
 	textObject.TextStrokeTransparency = 1
+	textObject.TextTransparency = 0
+
+	if textColor then
+		textObject.TextColor3 = textColor
+	end
+end
+
+local function watchButtonTextColor(button)
+	if not button or not button:IsA("GuiButton") or buttonTextConnections[button] then
+		return
+	end
+
+	buttonTextConnections[button] = button:GetPropertyChangedSignal("TextColor3"):Connect(function()
+		if not button.Parent or button.TextColor3 == MENU_TEXT_COLOR then
+			return
+		end
+
+		task.defer(function()
+			if applyPolish then
+				applyPolish()
+			end
+		end)
+	end)
 end
 
 local function polishBadge(button, badgeName, badgeSize)
@@ -168,7 +194,7 @@ local function polishBadge(button, badgeName, badgeSize)
 	return true
 end
 
-local function applyPolish()
+applyPolish = function()
 	local screenGui = activeGui
 	local camera = Workspace.CurrentCamera
 	if not screenGui or not screenGui.Parent or not camera then
@@ -210,7 +236,8 @@ local function applyPolish()
 				button.Position = UDim2.fromOffset(0, (index - 1) * (buttonHeight + config.ButtonGap))
 				button.Size = UDim2.new(1, 0, 0, buttonHeight)
 				button.TextWrapped = true
-				sharpenText(button, config.ButtonTextSize)
+				watchButtonTextColor(button)
+				sharpenText(button, config.ButtonTextSize, MENU_TEXT_COLOR)
 			else
 				allButtonsReady = false
 			end
@@ -228,7 +255,7 @@ local function applyPolish()
 		print(
 			"[UtilityMenuPolish] Mode="
 				.. mode
-				.. " native-scale sharp-text menu="
+				.. " Luck-color text menu="
 				.. tostring(config.MenuWidth)
 				.. "px viewport="
 				.. tostring(math.floor(viewport.X))
