@@ -1,7 +1,9 @@
 -- StarterPlayer/StarterPlayerScripts/UtilityMenuPolish.client.lua
--- Keeps the existing right-side utility menu fully inside the screen.
--- No new UI is created; this script only adjusts existing elements.
+-- Keeps the existing right-side utility menu readable on every screen size.
+-- No new UI is created. Text-heavy controls stay at native UIScale 1.0 so
+-- Roblox does not blur them at fractional scales.
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
@@ -10,51 +12,117 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 local UI_NAME = "BrainRNG_UI"
 local FIND_TIMEOUT_SECONDS = 30
-local TARGET_MENU_HEIGHT = 240
-local WIDE_SHORT_MIN_WIDTH = 850
-local WIDE_SHORT_MAX_HEIGHT = 500
-local WIDE_SHORT_MENU_Y_SCALE = 0.52
-local WIDE_SHORT_RIGHT_MARGIN = 10
 local RESPONSIVE_SCALE_NAME = "ResponsiveUILayoutScale"
+
+local BUTTON_NAMES = {
+	"IndexButton",
+	"QuestButton",
+	"ChestButton",
+	"LuckButton",
+	"AutoUpButton",
+}
+
+local MODE_CONFIG = {
+	DESKTOP = {
+		MenuWidth = 140,
+		ButtonGap = 6,
+		ButtonTextSize = 13,
+		BadgeSize = 24,
+		LuckWidth = 160,
+		LuckHeight = 34,
+		LuckTextSize = 18,
+		RightMargin = 20,
+		TopMargin = 16,
+		MenuGap = 8,
+	},
+	COMPACT = {
+		MenuWidth = 128,
+		ButtonGap = 5,
+		ButtonTextSize = 13,
+		BadgeSize = 22,
+		LuckWidth = 128,
+		LuckHeight = 32,
+		LuckTextSize = 16,
+		RightMargin = 10,
+		TopMargin = 10,
+		MenuGap = 7,
+	},
+	NARROW = {
+		MenuWidth = 112,
+		ButtonGap = 4,
+		ButtonTextSize = 13,
+		BadgeSize = 20,
+		LuckWidth = 112,
+		LuckHeight = 30,
+		LuckTextSize = 14,
+		RightMargin = 7,
+		TopMargin = 8,
+		MenuGap = 7,
+	},
+	WIDE_SHORT = {
+		MenuWidth = 140,
+		ButtonGap = 6,
+		ButtonTextSize = 13,
+		BadgeSize = 24,
+		LuckWidth = 140,
+		LuckHeight = 30,
+		LuckTextSize = 16,
+		RightMargin = 10,
+		TopMargin = 8,
+		MenuGap = 7,
+	},
+	LANDSCAPE_COMPACT = {
+		MenuWidth = 110,
+		ButtonGap = 3,
+		ButtonTextSize = 12,
+		BadgeSize = 18,
+		LuckWidth = 110,
+		LuckHeight = 28,
+		LuckTextSize = 13,
+		RightMargin = 7,
+		TopMargin = 6,
+		MenuGap = 6,
+	},
+}
 
 local activeGui = nil
 local activeGuiConnection = nil
 local cameraViewportConnection = nil
+local lastMode = nil
 
-local function polishBadge(button, badgeName)
-	if not button or not button:IsA("GuiObject") then
-		return false
+local function resolveMode(viewport)
+	if viewport.Y <= 500 then
+		if viewport.X >= 850 then
+			return "WIDE_SHORT"
+		end
+
+		return "LANDSCAPE_COMPACT"
 	end
 
-	local badge = button:FindFirstChild(badgeName)
-	if not badge or not badge:IsA("GuiObject") then
-		return false
+	if viewport.X <= 430 then
+		return "NARROW"
 	end
 
-	-- Keep the badge inside the button boundary so it cannot be clipped by the
-	-- right edge of the viewport on desktop or mobile.
-	badge.AnchorPoint = Vector2.new(1, 0)
-	badge.Position = UDim2.new(1, -4, 0, -4)
-	badge.Size = UDim2.fromOffset(24, 24)
-
-	if badge:IsA("TextLabel") or badge:IsA("TextButton") then
-		badge.TextSize = 16
+	if viewport.X <= 700 or viewport.Y <= 720 then
+		return "COMPACT"
 	end
 
-	return true
+	return "DESKTOP"
 end
 
-local function isWideShortViewport()
-	local camera = Workspace.CurrentCamera
-	if not camera then
-		return false
+local function getTopInset()
+	local ok, topLeft = pcall(function()
+		return GuiService:GetGuiInset()
+	end)
+
+	if not ok or not topLeft then
+		return 0
 	end
 
-	local viewport = camera.ViewportSize
-	return viewport.X >= WIDE_SHORT_MIN_WIDTH and viewport.Y <= WIDE_SHORT_MAX_HEIGHT
+	return topLeft.Y
 end
 
-local function restoreNativeTextScale(guiObject)
+local function restoreNativeScale(guiObject)
 	if not guiObject or not guiObject:IsA("GuiObject") then
 		return
 	end
@@ -65,52 +133,108 @@ local function restoreNativeTextScale(guiObject)
 	end
 end
 
+local function polishBadge(button, badgeName, badgeSize)
+	if not button or not button:IsA("GuiObject") then
+		return false
+	end
+
+	local badge = button:FindFirstChild(badgeName)
+	if not badge or not badge:IsA("GuiObject") then
+		return false
+	end
+
+	badge.AnchorPoint = Vector2.new(1, 0)
+	badge.Position = UDim2.new(1, -3, 0, -3)
+	badge.Size = UDim2.fromOffset(badgeSize, badgeSize)
+
+	if badge:IsA("TextLabel") or badge:IsA("TextButton") then
+		badge.TextScaled = false
+		badge.TextSize = math.max(12, badgeSize - 8)
+	end
+
+	return true
+end
+
 local function applyPolish()
 	local screenGui = activeGui
-	if not screenGui or not screenGui.Parent then
+	local camera = Workspace.CurrentCamera
+	if not screenGui or not screenGui.Parent or not camera then
 		return
 	end
 
-	local utilityMenu = screenGui:FindFirstChild("UtilityMenuFrame")
-	if utilityMenu and utilityMenu:IsA("GuiObject") then
-		-- Five 42 px buttons at Y offsets 0, 48, 96, 144, 192 end at 234 px.
-		-- Six extra pixels leave a small bottom pad without the long empty strip.
-		utilityMenu.Size = UDim2.new(0, 140, 0, TARGET_MENU_HEIGHT)
-		utilityMenu.ClipsDescendants = false
+	local viewport = camera.ViewportSize
+	local mode = resolveMode(viewport)
+	local config = MODE_CONFIG[mode]
+	local topInset = getTopInset()
 
-		-- In a short but wide PC window, the Roblox top inset pushes LuckBar low
-		-- enough to overlap Concepts. Move only the utility menu down and leave all
-		-- other responsive modes under ResponsiveUILayout's control.
-		if isWideShortViewport() then
-			-- Fractional UIScale values make small Roblox text look blurry. Keep this
-			-- text-heavy menu at its native 1.0 scale and solve spacing with position.
-			restoreNativeTextScale(utilityMenu)
-			utilityMenu.AnchorPoint = Vector2.new(1, 0.5)
-			utilityMenu.Position = UDim2.new(1, -WIDE_SHORT_RIGHT_MARGIN, WIDE_SHORT_MENU_Y_SCALE, 0)
+	local luckBar = screenGui:FindFirstChild("LuckBar")
+	if luckBar and luckBar:IsA("GuiObject") then
+		restoreNativeScale(luckBar)
+		luckBar.AnchorPoint = Vector2.new(1, 0)
+		luckBar.Position = UDim2.new(1, -config.RightMargin, 0, topInset + config.TopMargin)
+		luckBar.Size = UDim2.fromOffset(config.LuckWidth, config.LuckHeight)
+
+		if luckBar:IsA("TextLabel") or luckBar:IsA("TextButton") then
+			luckBar.TextScaled = false
+			luckBar.TextSize = config.LuckTextSize
 		end
 	end
 
-	if isWideShortViewport() then
-		restoreNativeTextScale(screenGui:FindFirstChild("LuckBar"))
+	local utilityMenu = screenGui:FindFirstChild("UtilityMenuFrame")
+	local allButtonsReady = utilityMenu ~= nil
+	if utilityMenu and utilityMenu:IsA("GuiObject") then
+		restoreNativeScale(utilityMenu)
+
+		local buttonHeight = 42
+		local menuHeight = (#BUTTON_NAMES * buttonHeight) + ((#BUTTON_NAMES - 1) * config.ButtonGap) + 4
+		local menuTop = topInset + config.TopMargin + config.LuckHeight + config.MenuGap
+
+		utilityMenu.AnchorPoint = Vector2.new(1, 0)
+		utilityMenu.Position = UDim2.new(1, -config.RightMargin, 0, menuTop)
+		utilityMenu.Size = UDim2.fromOffset(config.MenuWidth, menuHeight)
+		utilityMenu.ClipsDescendants = false
+
+		for index, buttonName in ipairs(BUTTON_NAMES) do
+			local button = utilityMenu:FindFirstChild(buttonName)
+			if button and button:IsA("GuiButton") then
+				button.AnchorPoint = Vector2.zero
+				button.Position = UDim2.fromOffset(0, (index - 1) * (buttonHeight + config.ButtonGap))
+				button.Size = UDim2.new(1, 0, 0, buttonHeight)
+				button.TextScaled = false
+				button.TextSize = config.ButtonTextSize
+				button.TextWrapped = true
+			else
+				allButtonsReady = false
+			end
+		end
+
+		local questButton = utilityMenu:FindFirstChild("QuestButton")
+		local chestButton = utilityMenu:FindFirstChild("ChestButton")
+		local questReady = polishBadge(questButton, "QuestReadyBadge", config.BadgeSize)
+		local chestReady = polishBadge(chestButton, "ChestReadyBadge", config.BadgeSize)
+		allButtonsReady = allButtonsReady and questReady and chestReady
 	end
 
-	local questButton = utilityMenu and utilityMenu:FindFirstChild("QuestButton")
-	local chestButton = utilityMenu and utilityMenu:FindFirstChild("ChestButton")
-
-	local questReady = polishBadge(questButton, "QuestReadyBadge")
-	local chestReady = polishBadge(chestButton, "ChestReadyBadge")
-
-	if utilityMenu and questReady and chestReady and not utilityMenu:GetAttribute("UtilityMenuPolishLogged") then
-		utilityMenu:SetAttribute("UtilityMenuPolishLogged", true)
-		print("[UtilityMenuPolish] Applied safe badges, compact height, spacing, and native text scale")
+	if mode ~= lastMode and allButtonsReady and luckBar then
+		lastMode = mode
+		print(
+			"[UtilityMenuPolish] Mode="
+				.. mode
+				.. " native-scale menu="
+				.. tostring(config.MenuWidth)
+				.. "px viewport="
+				.. tostring(math.floor(viewport.X))
+				.. "x"
+				.. tostring(math.floor(viewport.Y))
+		)
 	end
 end
 
 local function schedulePolish()
-	-- ResponsiveUILayout also reacts to viewport changes. Apply immediately and
-	-- once more just after it so spacing and native text scale win deterministically.
+	-- ResponsiveUILayout may apply fractional scales first. Re-apply after it so
+	-- text-heavy menu controls always finish at native scale with integer sizes.
 	task.defer(applyPolish)
-	task.delay(0.05, applyPolish)
+	task.delay(0.06, applyPolish)
 end
 
 local function disconnectActiveGuiConnection()
@@ -142,8 +266,10 @@ local function attach(screenGui)
 	if activeGui ~= screenGui then
 		disconnectActiveGuiConnection()
 		activeGui = screenGui
+		lastMode = nil
 		activeGuiConnection = screenGui.DescendantAdded:Connect(function(descendant)
 			if descendant.Name == "UtilityMenuFrame"
+				or descendant.Name == "LuckBar"
 				or descendant.Name == "QuestReadyBadge"
 				or descendant.Name == "ChestReadyBadge"
 			then
