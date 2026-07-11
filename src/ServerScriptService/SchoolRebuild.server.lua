@@ -79,8 +79,10 @@ local function configureDoor(door)
 		return false
 	end
 
-	door.Size = w(Vector3.new(13.5, 15.5, 0.35))
-	door.Position = w(Vector3.new(0, 8.75, 66.35))
+	-- Bottom is Y=2.0, leaving a gap above the upper step. Back face is
+	-- separated from the frame and from CenterHall.
+	door.Size = w(Vector3.new(13.5, 15.4, 0.3))
+	door.Position = w(Vector3.new(0, 9.7, 66.55))
 	door.Material = Enum.Material.SmoothPlastic
 	door.Color = COLORS.Blue
 	door.Transparency = 0.16
@@ -202,8 +204,8 @@ local function configureSign(signPart)
 end
 
 local function buildWindow(parent, prefix, centerX)
-	-- Recess and glass never share a surface: back panel, then a 0.2-stud gap,
-	-- then the glass, then four front frame pieces.
+	-- Each layer has a physical Z gap. Frame corners only touch at edges:
+	-- horizontal pieces end exactly at the inner faces of vertical pieces.
 	makePart(parent, prefix .. "_Recess", Vector3.new(10, 10, 0.45), Vector3.new(centerX, 12, 68.65), COLORS.BlueDark)
 	makePart(parent, prefix .. "_Glass", Vector3.new(8.2, 8.2, 0.25), Vector3.new(centerX, 12, 68.25), COLORS.Glass, Enum.Material.Glass, {
 		Transparency = 0.12,
@@ -211,10 +213,10 @@ local function buildWindow(parent, prefix, centerX)
 		CanQuery = false,
 		CastShadow = false,
 	})
-	makePart(parent, prefix .. "_FrameTop", Vector3.new(9.2, 0.55, 0.35), Vector3.new(centerX, 16.4, 67.95), COLORS.Cream, nil, { CanCollide = false, CanQuery = false })
-	makePart(parent, prefix .. "_FrameBottom", Vector3.new(9.2, 0.55, 0.35), Vector3.new(centerX, 7.6, 67.95), COLORS.Cream, nil, { CanCollide = false, CanQuery = false })
-	makePart(parent, prefix .. "_FrameLeft", Vector3.new(0.55, 8.2, 0.35), Vector3.new(centerX - 4.35, 12, 67.95), COLORS.Cream, nil, { CanCollide = false, CanQuery = false })
-	makePart(parent, prefix .. "_FrameRight", Vector3.new(0.55, 8.2, 0.35), Vector3.new(centerX + 4.35, 12, 67.95), COLORS.Cream, nil, { CanCollide = false, CanQuery = false })
+	makePart(parent, prefix .. "_FrameTop", Vector3.new(8.1, 0.55, 0.35), Vector3.new(centerX, 16.325, 67.95), COLORS.Cream, nil, { CanCollide = false, CanQuery = false })
+	makePart(parent, prefix .. "_FrameBottom", Vector3.new(8.1, 0.55, 0.35), Vector3.new(centerX, 7.675, 67.95), COLORS.Cream, nil, { CanCollide = false, CanQuery = false })
+	makePart(parent, prefix .. "_FrameLeft", Vector3.new(0.55, 8.1, 0.35), Vector3.new(centerX - 4.325, 12, 67.95), COLORS.Cream, nil, { CanCollide = false, CanQuery = false })
+	makePart(parent, prefix .. "_FrameRight", Vector3.new(0.55, 8.1, 0.35), Vector3.new(centerX + 4.325, 12, 67.95), COLORS.Cream, nil, { CanCollide = false, CanQuery = false })
 end
 
 local function buildSchool(gateArea)
@@ -227,7 +229,7 @@ local function buildSchool(gateArea)
 	build.Name = BUILD_NAME
 	build.Parent = gateArea
 
-	-- Foundation and steps have vertical gaps, avoiding coplanar faces.
+	-- Foundation and steps meet only on their boundary planes.
 	makePart(build, "Foundation", Vector3.new(66, 1.4, 24), Vector3.new(0, 0.7, 79), COLORS.Stone, Enum.Material.Concrete)
 	makePart(build, "FrontStepLower", Vector3.new(22, 0.8, 7), Vector3.new(0, 0.4, 63), COLORS.Stone, Enum.Material.Concrete)
 	makePart(build, "FrontStepUpper", Vector3.new(18, 0.8, 4), Vector3.new(0, 1.2, 65), COLORS.Cream, Enum.Material.Concrete)
@@ -237,7 +239,7 @@ local function buildSchool(gateArea)
 	makePart(build, "RightWing", Vector3.new(22, 20, 18), Vector3.new(19, 11.4, 79), COLORS.Brick, Enum.Material.Brick)
 	makePart(build, "CenterHall", Vector3.new(16, 26, 14), Vector3.new(0, 14.4, 75), COLORS.BrickDark, Enum.Material.Brick)
 
-	-- Roof slabs sit above each body with a 0.15-stud vertical air gap.
+	-- Roof slabs sit above each body with a visible vertical air gap.
 	makePart(build, "LeftRoof", Vector3.new(24, 2.4, 20), Vector3.new(-19, 22.75, 79), COLORS.Blue)
 	makePart(build, "RightRoof", Vector3.new(24, 2.4, 20), Vector3.new(19, 22.75, 79), COLORS.Blue)
 	makePart(build, "CenterRoof", Vector3.new(18, 2.6, 16), Vector3.new(0, 28.75, 75), COLORS.BlueDark)
@@ -245,15 +247,16 @@ local function buildSchool(gateArea)
 	buildWindow(build, "LeftWindow", -19)
 	buildWindow(build, "RightWindow", 19)
 
-	-- Door frame is fully in front of CenterHall. Frame pieces meet at edges.
-	makePart(build, "DoorFrameLeft", Vector3.new(1.5, 16.5, 0.5), Vector3.new(-7.5, 9.25, 66.0), COLORS.Cream)
-	makePart(build, "DoorFrameRight", Vector3.new(1.5, 16.5, 0.5), Vector3.new(7.5, 9.25, 66.0), COLORS.Cream)
-	makePart(build, "DoorFrameTop", Vector3.new(16.5, 1.5, 0.5), Vector3.new(0, 18.25, 66.0), COLORS.Cream)
+	-- Door frame starts above the top step. Side pieces and top beam touch at
+	-- Y=18 but never share volume. Door sits behind the frame with a Z gap.
+	makePart(build, "DoorFrameLeft", Vector3.new(1.5, 16, 0.5), Vector3.new(-7.5, 10, 66.0), COLORS.Cream)
+	makePart(build, "DoorFrameRight", Vector3.new(1.5, 16, 0.5), Vector3.new(7.5, 10, 66.0), COLORS.Cream)
+	makePart(build, "DoorFrameTop", Vector3.new(16.5, 1.5, 0.5), Vector3.new(0, 18.75, 66.0), COLORS.Cream)
 
 	makePart(build, "LeftColumn", Vector3.new(2.4, 20, 2.4), Vector3.new(-30.5, 11.4, 68.5), COLORS.Cream)
 	makePart(build, "RightColumn", Vector3.new(2.4, 20, 2.4), Vector3.new(30.5, 11.4, 68.5), COLORS.Cream)
 
-	-- Small roof crest gives a Roblox-simulator silhouette without overlapping.
+	-- Roof crest pieces meet only on their boundary planes.
 	makePart(build, "CrestBase", Vector3.new(7, 1.2, 3), Vector3.new(0, 30.75, 75), COLORS.Gold)
 	makePart(build, "CrestStem", Vector3.new(1.2, 4, 1.2), Vector3.new(0, 33.35, 75), COLORS.Gold)
 	makePart(build, "CrestTop", Vector3.new(4, 1, 1), Vector3.new(0, 35.85, 75), COLORS.Gold)
