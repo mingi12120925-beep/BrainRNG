@@ -6,7 +6,8 @@ local SimpleWorldBuilder = {}
 
 local MAP_NAME = "SimpleMap"
 local LOBBY_NAME = "Lobby_Prestige0_School"
-local WORLD_SCALE = 1.45
+local WORLD_SCALE = 2.5
+local PROMPT_DISTANCE = 18
 local COLORS = {
 	WarmWhite = Color3.fromRGB(244, 239, 221),
 	SchoolBlue = Color3.fromRGB(73, 132, 197),
@@ -169,7 +170,7 @@ local function prompt(parent, name, actionText, objectText)
 	item.ActionText = actionText
 	item.ObjectText = objectText
 	item.HoldDuration = 0
-	item.MaxActivationDistance = 12 * WORLD_SCALE
+	item.MaxActivationDistance = PROMPT_DISTANCE
 	item.RequiresLineOfSight = false
 	item.Enabled = true
 	item.Parent = parent
@@ -768,8 +769,9 @@ function SimpleWorldBuilder.CreateMap()
 	local map = folder(Workspace, MAP_NAME)
 	map:SetAttribute("Theme", "Prestige0SchoolLobby")
 	map:SetAttribute("MapStyle", "ClassicSimulator")
-	map:SetAttribute("LayoutVersion", 3)
+	map:SetAttribute("LayoutVersion", 4)
 	map:SetAttribute("WorldScale", WORLD_SCALE)
+	map:SetAttribute("InteractionDistance", PROMPT_DISTANCE)
 	map:SetAttribute("GroundStyle", "ExtendedLandscape")
 
 	local lobby = createLobbyFolders(map)
