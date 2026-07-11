@@ -33,7 +33,14 @@ local function getInsets()
 end
 
 local function resolveMode(viewport)
+	-- A short but wide desktop window should not be treated like a phone in
+	-- landscape. The old height-only rule made the right menu unreadably small
+	-- around 991x378 even though there was plenty of horizontal room.
 	if viewport.Y <= 500 then
+		if viewport.X >= 850 then
+			return "WIDE_SHORT"
+		end
+
 		return "LANDSCAPE_COMPACT"
 	end
 
@@ -89,6 +96,20 @@ local MODE_CONFIG = {
 		UtilityYScale = 0.45,
 		BottomMargin = 14,
 		SideMargin = 8,
+		TopMargin = 8,
+	},
+	WIDE_SHORT = {
+		UtilityScale = 0.82,
+		ButtonScale = 0.9,
+		TopScale = 0.86,
+		PanelScale = 0.84,
+		TutorialScale = 0.8,
+		RouletteScale = 0.78,
+		AdminScale = 0.8,
+		RightMargin = 10,
+		UtilityYScale = 0.47,
+		BottomMargin = 12,
+		SideMargin = 10,
 		TopMargin = 8,
 	},
 	LANDSCAPE_COMPACT = {
