@@ -1,18 +1,17 @@
 -- ServerScriptService/SchoolRebuild.server.lua
--- Final owner of the school facade.
--- Waits for legacy styling passes, removes their school visuals, then builds once.
--- No repeated full rebuilds and no coplanar decorative layers.
+-- Owns the final school facade. The old school is removed and rebuilt exactly once
+-- after legacy structure/sign passes have settled. Functional gate objects survive.
 
 local Workspace = game:GetService("Workspace")
 
 local MAP_NAME = "SimpleMap"
 local LOBBY_NAME = "Lobby_Prestige0_School"
 local GATE_AREA_NAME = "GateArea"
-local BUILD_NAME = "P0_SchoolBuilding_Rebuilt"
 local FIND_TIMEOUT_SECONDS = 25
 local LEGACY_SETTLE_TIMEOUT_SECONDS = 4
 local WORLD_SCALE = 2.5
-local BUILD_VERSION = "ScratchRebuildV2_StableSinglePass"
+local BUILD_NAME = "P0_SchoolBuilding_Rebuilt"
+local BUILD_VERSION = "ScratchRebuildV3_CorrectNestedPath"
 
 local COLORS = {
 	Brick = Color3.fromRGB(202, 94, 74),
@@ -78,8 +77,8 @@ local function configureDoor(door)
 	end
 
 	doorApplying = true
-	door.Size = w(Vector3.new(13.5, 15.2, 0.3))
-	door.Position = w(Vector3.new(0, 9.8, 66.6))
+	door.Size = w(Vector3.new(13.2, 15.2, 0.3))
+	door.Position = w(Vector3.new(0, 9.8, 67.4))
 	door.Material = Enum.Material.SmoothPlastic
 	door.Color = COLORS.Blue
 	door.Transparency = 0
@@ -97,12 +96,12 @@ local function configureDoor(door)
 end
 
 local function connectDoorGuard(door)
-	if door:GetAttribute("StableSchoolDoorGuard") then
+	if door:GetAttribute("StableSchoolDoorGuardV3") then
 		configureDoor(door)
 		return
 	end
 
-	door:SetAttribute("StableSchoolDoorGuard", true)
+	door:SetAttribute("StableSchoolDoorGuardV3", true)
 	for _, propertyName in ipairs({
 		"Size",
 		"Position",
@@ -123,7 +122,7 @@ local function connectDoorGuard(door)
 	configureDoor(door)
 end
 
-local function readExistingSignText(signPart, name, fallback)
+local function readSignText(signPart, name, fallback)
 	local label = signPart and signPart:FindFirstChild(name, true)
 	if label and label:IsA("TextLabel") and label.Text ~= "" then
 		return label.Text
@@ -156,10 +155,9 @@ local function configureSign(signPart)
 		return false
 	end
 
-	local titleText = readExistingSignText(signPart, "NextAreaGateTitle", "ELEMENTARY SCHOOL")
-	local subtitleText = readExistingSignText(signPart, "NextAreaGateSubtitle", "IQ 80.500 REQUIRED")
+	local titleText = readSignText(signPart, "NextAreaGateTitle", "ELEMENTARY SCHOOL")
+	local subtitleText = readSignText(signPart, "NextAreaGateSubtitle", "IQ 80.500 REQUIRED")
 
-	-- Destroy old labels instead of reusing objects carrying legacy property watchers.
 	for _, child in ipairs(signPart:GetChildren()) do
 		if child:IsA("SurfaceGui") or child:IsA("BillboardGui") then
 			child:Destroy()
@@ -167,7 +165,7 @@ local function configureSign(signPart)
 	end
 
 	signPart.Size = w(Vector3.new(22, 5.2, 0.4))
-	signPart.Position = w(Vector3.new(0, 25.6, 65.4))
+	signPart.Position = w(Vector3.new(0, 25.6, 65.2))
 	signPart.Material = Enum.Material.SmoothPlastic
 	signPart.Color = COLORS.Ink
 	signPart.Transparency = 0
@@ -201,75 +199,52 @@ local function configureSign(signPart)
 	accent.Size = UDim2.fromScale(1, 0.1)
 	accent.Parent = panel
 
-	makeSignLabel(
-		panel,
-		"NextAreaGateTitle",
-		titleText,
-		UDim2.fromScale(0.03, 0.13),
-		UDim2.fromScale(0.94, 0.49),
-		Enum.Font.GothamBlack,
-		78,
-		COLORS.White
-	)
-	makeSignLabel(
-		panel,
-		"NextAreaGateSubtitle",
-		subtitleText,
-		UDim2.fromScale(0.04, 0.63),
-		UDim2.fromScale(0.92, 0.27),
-		Enum.Font.GothamBold,
-		42,
-		COLORS.BlueLight
-	)
+	makeSignLabel(panel, "NextAreaGateTitle", titleText, UDim2.fromScale(0.03, 0.13), UDim2.fromScale(0.94, 0.49), Enum.Font.GothamBlack, 78, COLORS.White)
+	makeSignLabel(panel, "NextAreaGateSubtitle", subtitleText, UDim2.fromScale(0.04, 0.63), UDim2.fromScale(0.92, 0.27), Enum.Font.GothamBold, 42, COLORS.BlueLight)
 	return true
 end
 
 local function buildSchool(gateArea)
-	local oldBuild = gateArea:FindFirstChild(BUILD_NAME)
-	if oldBuild then
-		oldBuild:Destroy()
-	end
-
 	local build = Instance.new("Model")
 	build.Name = BUILD_NAME
 	build.Parent = gateArea
 
-	-- Every major block has a visible air gap. No shared coplanar faces.
+	-- Foundation and approach use different heights, so no horizontal surfaces overlap.
 	makePart(build, "Foundation", Vector3.new(66, 1.2, 24), Vector3.new(0, 0.6, 79), COLORS.Stone, Enum.Material.Concrete)
 	makePart(build, "FrontStepLower", Vector3.new(22, 0.7, 6.5), Vector3.new(0, 0.35, 62.8), COLORS.Stone, Enum.Material.Concrete)
 	makePart(build, "FrontStepUpper", Vector3.new(18, 0.7, 3.5), Vector3.new(0, 1.2, 64.8), COLORS.Cream, Enum.Material.Concrete)
 
+	-- The three building blocks are separated by 0.5-stud X gaps.
 	makePart(build, "LeftWing", Vector3.new(21.5, 19.5, 18), Vector3.new(-19.5, 11.35, 79), COLORS.Brick, Enum.Material.Brick)
 	makePart(build, "RightWing", Vector3.new(21.5, 19.5, 18), Vector3.new(19.5, 11.35, 79), COLORS.Brick, Enum.Material.Brick)
 	makePart(build, "CenterHall", Vector3.new(16, 25.5, 14), Vector3.new(0, 14.25, 75), COLORS.BrickDark, Enum.Material.Brick)
 
+	-- Roofs have visible vertical gaps above their walls.
 	makePart(build, "LeftRoof", Vector3.new(23.5, 2.2, 20), Vector3.new(-19.5, 22.5, 79), COLORS.Blue)
 	makePart(build, "RightRoof", Vector3.new(23.5, 2.2, 20), Vector3.new(19.5, 22.5, 79), COLORS.Blue)
-	makePart(build, "CenterRoof", Vector3.new(18, 2.4, 16), Vector3.new(0, 28.4, 75), COLORS.BlueDark)
+	makePart(build, "CenterRoof", Vector3.new(18, 2.4, 16), Vector3.new(0, 30.7, 75), COLORS.BlueDark)
 
-	-- Single opaque window panels: no glass/frame layer stack and no transparency sorting.
-	makePart(build, "LeftWindow", Vector3.new(9.5, 8.5, 0.45), Vector3.new(-19.5, 12, 68.5), COLORS.Window, Enum.Material.SmoothPlastic, {
+	-- Opaque single-piece windows avoid transparent-layer sorting and z-fighting.
+	makePart(build, "LeftWindow", Vector3.new(9.5, 8.5, 0.45), Vector3.new(-19.5, 12, 69.55), COLORS.Window, Enum.Material.SmoothPlastic, {
 		CanCollide = false,
 		CanQuery = false,
 		CastShadow = false,
 	})
-	makePart(build, "RightWindow", Vector3.new(9.5, 8.5, 0.45), Vector3.new(19.5, 12, 68.5), COLORS.Window, Enum.Material.SmoothPlastic, {
+	makePart(build, "RightWindow", Vector3.new(9.5, 8.5, 0.45), Vector3.new(19.5, 12, 69.55), COLORS.Window, Enum.Material.SmoothPlastic, {
 		CanCollide = false,
 		CanQuery = false,
 		CastShadow = false,
 	})
 
-	-- Frame pieces have small gaps at corners and sit in front of the opaque door.
-	makePart(build, "DoorFrameLeft", Vector3.new(1.5, 15.5, 0.45), Vector3.new(-7.6, 10.05, 65.95), COLORS.Cream)
-	makePart(build, "DoorFrameRight", Vector3.new(1.5, 15.5, 0.45), Vector3.new(7.6, 10.05, 65.95), COLORS.Cream)
-	makePart(build, "DoorFrameTop", Vector3.new(16.4, 1.4, 0.45), Vector3.new(0, 18.65, 65.95), COLORS.Cream)
+	-- Door frame is fully in front of the hall; side pieces and top beam have gaps.
+	makePart(build, "DoorFrameLeft", Vector3.new(1.5, 15.5, 0.45), Vector3.new(-7.5, 10.05, 66.8), COLORS.Cream)
+	makePart(build, "DoorFrameRight", Vector3.new(1.5, 15.5, 0.45), Vector3.new(7.5, 10.05, 66.8), COLORS.Cream)
+	makePart(build, "DoorFrameTop", Vector3.new(15.2, 1.4, 0.45), Vector3.new(0, 18.65, 66.8), COLORS.Cream)
 
-	makePart(build, "LeftColumn", Vector3.new(2.2, 19.5, 2.2), Vector3.new(-31, 11.35, 68.4), COLORS.Cream)
-	makePart(build, "RightColumn", Vector3.new(2.2, 19.5, 2.2), Vector3.new(31, 11.35, 68.4), COLORS.Cream)
-
-	makePart(build, "CrestBase", Vector3.new(7, 1.1, 3), Vector3.new(0, 30.3, 75), COLORS.Gold)
-	makePart(build, "CrestStem", Vector3.new(1.1, 3.6, 1.1), Vector3.new(0, 32.85, 75), COLORS.Gold)
-	makePart(build, "CrestTop", Vector3.new(4, 0.9, 1), Vector3.new(0, 35.25, 75), COLORS.Gold)
+	-- Simple crest parts are vertically separated.
+	makePart(build, "CrestBase", Vector3.new(7, 1.1, 3), Vector3.new(0, 32.6, 75), COLORS.Gold)
+	makePart(build, "CrestStem", Vector3.new(1.1, 3.4, 1.1), Vector3.new(0, 35.0, 75), COLORS.Gold)
+	makePart(build, "CrestTop", Vector3.new(4, 0.9, 1), Vector3.new(0, 37.4, 75), COLORS.Gold)
 
 	return build
 end
@@ -301,7 +276,8 @@ local function waitForDependencies(map)
 	local lobby, gateArea, gateModel, door, signPart
 
 	repeat
-		lobby = map:FindFirstChild(LOBBY_NAME)
+		-- Lobby is nested under SimpleMap.World, not directly under SimpleMap.
+		lobby = findDescendant(map, LOBBY_NAME)
 		gateArea = lobby and lobby:FindFirstChild(GATE_AREA_NAME)
 		gateModel = map:FindFirstChild("NextAreaGate")
 		door = gateModel and gateModel:FindFirstChild("NextAreaGate_Door")
@@ -312,7 +288,7 @@ local function waitForDependencies(map)
 		task.wait(0.05)
 	until os.clock() >= deadline
 
-	return lobby, gateArea, gateModel, door, signPart
+	return gateArea, gateModel, door, signPart
 end
 
 local function waitForLegacyPasses(map)
@@ -321,6 +297,7 @@ local function waitForLegacyPasses(map)
 		local structureDone = map:FindFirstChild("SimulatorStructureUpgrade") ~= nil
 		local signDone = map:GetAttribute("SignStyle") ~= nil
 		if structureDone and signDone then
+			task.wait(0.35)
 			return true
 		end
 		task.wait(0.05)
@@ -329,13 +306,13 @@ local function waitForLegacyPasses(map)
 end
 
 local function rebuildOnce(map)
-	if not map or not map.Parent or map:GetAttribute("SchoolStableBuildComplete") then
+	if not map or not map.Parent or map:GetAttribute("SchoolStableBuildCompleteV3") then
 		return
 	end
 
-	local _, gateArea, gateModel, door, signPart = waitForDependencies(map)
+	local gateArea, gateModel, door, signPart = waitForDependencies(map)
 	if not gateArea or not gateModel or not door or not signPart then
-		warn("[SchoolRebuild] Required gate objects missing; rebuild skipped.")
+		warn("[SchoolRebuild] Required nested gate objects missing; rebuild skipped.")
 		return
 	end
 
@@ -353,11 +330,11 @@ local function rebuildOnce(map)
 	connectDoorGuard(door)
 	local signReady = configureSign(signPart)
 
-	map:SetAttribute("SchoolStableBuildComplete", true)
+	map:SetAttribute("SchoolStableBuildCompleteV3", true)
 	map:SetAttribute("SchoolBuildVersion", BUILD_VERSION)
 	map:SetAttribute("SchoolOldPartsRemoved", removedOldParts + legacyRemoved + archRemoved)
 	print(
-		"[SchoolRebuild] stableSinglePass=true rebuilt="
+		"[SchoolRebuild] nestedPath=true stableSinglePass=true rebuilt="
 			.. tostring(build ~= nil)
 			.. " removedOldParts="
 			.. tostring(removedOldParts + legacyRemoved + archRemoved)
