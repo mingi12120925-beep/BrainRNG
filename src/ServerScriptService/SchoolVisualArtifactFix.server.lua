@@ -1,42 +1,128 @@
 -- ServerScriptService/SchoolVisualArtifactFix.server.lua
--- Removes the bright white/cyan facade panels visible around the school gate.
--- Functional prompts, portal requests, and gate labels are preserved.
+-- Separates the school sign, door frame, windows, and facade trims from the
+-- brick wall so no two visible surfaces occupy the same depth.
+-- Functional prompts and portal requests remain attached to the original door.
 
 local Workspace = game:GetService("Workspace")
 
 local MAP_NAME = "SimpleMap"
 local FIND_TIMEOUT_SECONDS = 25
+local WORLD_SCALE = 2.5
+local STYLE_VERSION = "SeparatedSchoolFacadeV2"
 
 local COLORS = {
 	Frame = Color3.fromRGB(42, 78, 116),
 	Door = Color3.fromRGB(70, 124, 174),
 	Window = Color3.fromRGB(38, 76, 105),
+	Trim = Color3.fromRGB(73, 132, 197),
 	Sign = Color3.fromRGB(30, 48, 70),
 	SignAccent = Color3.fromRGB(73, 132, 197),
 	Title = Color3.fromRGB(244, 248, 252),
 	Subtitle = Color3.fromRGB(156, 205, 235),
 }
 
+-- Design-space depth reference:
+-- Main school wall front face: Z=69
+-- Center tower front face: Z=68
+-- Tower cap front face: Z=66
+-- Every visible facade part below is placed fully in front with a real gap.
+local GEOMETRY = {
+	P0_GateFixedSign = {
+		Size = Vector3.new(28, 6, 0.4),
+		Position = Vector3.new(0, 27, 65.6),
+		Color = COLORS.Sign,
+		CanCollide = false,
+		CanQuery = false,
+		CastShadow = false,
+	},
+	P0_School_LeftTrim = {
+		Size = Vector3.new(3.2, 21, 0.25),
+		Position = Vector3.new(-25, 11, 68.55),
+		Color = COLORS.Trim,
+		CanCollide = false,
+		CanQuery = false,
+		CastShadow = false,
+	},
+	P0_School_RightTrim = {
+		Size = Vector3.new(3.2, 21, 0.25),
+		Position = Vector3.new(25, 11, 68.55),
+		Color = COLORS.Trim,
+		CanCollide = false,
+		CanQuery = false,
+		CastShadow = false,
+	},
+	P0_School_TopTrim = {
+		Size = Vector3.new(56, 2, 0.25),
+		Position = Vector3.new(0, 21, 68.55),
+		Color = COLORS.Trim,
+		CanCollide = false,
+		CanQuery = false,
+		CastShadow = false,
+	},
+	P0_School_LeftWindow = {
+		Size = Vector3.new(9.5, 8.5, 0.25),
+		Position = Vector3.new(-17, 12.5, 68.45),
+		Color = COLORS.Window,
+		Material = Enum.Material.Glass,
+		Transparency = 0.12,
+		CanCollide = false,
+		CanQuery = false,
+		CastShadow = false,
+	},
+	P0_School_RightWindow = {
+		Size = Vector3.new(9.5, 8.5, 0.25),
+		Position = Vector3.new(17, 12.5, 68.45),
+		Color = COLORS.Window,
+		Material = Enum.Material.Glass,
+		Transparency = 0.12,
+		CanCollide = false,
+		CanQuery = false,
+		CastShadow = false,
+	},
+	P0_School_DoorFrame_Left = {
+		Size = Vector3.new(2, 16.5, 0.45),
+		Position = Vector3.new(-8, 9.25, 67.55),
+		Color = COLORS.Frame,
+		CanCollide = true,
+		CanQuery = true,
+	},
+	P0_School_DoorFrame_Right = {
+		Size = Vector3.new(2, 16.5, 0.45),
+		Position = Vector3.new(8, 9.25, 67.55),
+		Color = COLORS.Frame,
+		CanCollide = true,
+		CanQuery = true,
+	},
+	P0_School_DoorFrame_Top = {
+		Size = Vector3.new(18, 1.5, 0.45),
+		Position = Vector3.new(0, 18.25, 67.55),
+		Color = COLORS.Frame,
+		CanCollide = true,
+		CanQuery = true,
+	},
+	NextAreaGate_Door = {
+		Size = Vector3.new(14, 16.3, 0.25),
+		Position = Vector3.new(0, 9.15, 67.0),
+		Color = COLORS.Door,
+		Material = Enum.Material.SmoothPlastic,
+		Transparency = 0.16,
+		CanCollide = false,
+		CanQuery = true,
+		CastShadow = false,
+	},
+}
+
 local HIDDEN_PART_NAMES = {
-	P0_School_LeftTrim = true,
-	P0_School_RightTrim = true,
-	P0_School_TopTrim = true,
 	NextAreaGateFrame_BottomGlow = true,
 	NextAreaLockIcon = true,
 }
 
-local FRAME_PART_NAMES = {
-	P0_School_DoorFrame_Left = true,
-	P0_School_DoorFrame_Right = true,
-	P0_School_DoorFrame_Top = true,
-}
-
-local WINDOW_PART_NAMES = {
-	P0_School_LeftWindow = true,
-	P0_School_RightWindow = true,
-}
-
 local applying = setmetatable({}, { __mode = "k" })
+local connected = setmetatable({}, { __mode = "k" })
+
+local function worldVector(value)
+	return value * WORLD_SCALE
+end
 
 local function findDescendant(root, name)
 	return root and root:FindFirstChild(name, true) or nil
@@ -70,20 +156,22 @@ local function hidePart(part)
 	return true
 end
 
-local function applyBasePartStyle(part, style)
+local function applyGeometry(part, config)
 	if applying[part] or not part or not part.Parent or not part:IsA("BasePart") then
 		return false
 	end
 
 	applying[part] = true
-	part.Material = style.Material or Enum.Material.SmoothPlastic
-	part.Color = style.Color
-	part.Transparency = style.Transparency or 0
+	part.Size = worldVector(config.Size)
+	part.Position = worldVector(config.Position)
+	part.Material = config.Material or Enum.Material.SmoothPlastic
+	part.Color = config.Color
+	part.Transparency = config.Transparency or 0
 	part.Reflectance = 0
-	part.CastShadow = style.CastShadow ~= false
-	part.CanCollide = style.CanCollide == true
+	part.CanCollide = config.CanCollide == true
 	part.CanTouch = false
-	part.CanQuery = style.CanQuery ~= false
+	part.CanQuery = config.CanQuery ~= false
+	part.CastShadow = config.CastShadow ~= false
 	part.TopSurface = Enum.SurfaceType.Smooth
 	part.BottomSurface = Enum.SurfaceType.Smooth
 	removeAnimatedEffects(part)
@@ -91,15 +179,16 @@ local function applyBasePartStyle(part, style)
 	return true
 end
 
-local function watchBasePart(part, style)
-	local attributeName = "SchoolFacadeStyle_" .. part.Name
-	if part:GetAttribute(attributeName) then
-		applyBasePartStyle(part, style)
+local function watchGeometry(part, config)
+	if connected[part] then
+		applyGeometry(part, config)
 		return
 	end
 
-	part:SetAttribute(attributeName, true)
+	connected[part] = true
 	for _, propertyName in ipairs({
+		"Position",
+		"Size",
 		"Material",
 		"Color",
 		"Transparency",
@@ -110,11 +199,11 @@ local function watchBasePart(part, style)
 	}) do
 		part:GetPropertyChangedSignal(propertyName):Connect(function()
 			task.defer(function()
-				applyBasePartStyle(part, style)
+				applyGeometry(part, config)
 			end)
 		end)
 	end
-	applyBasePartStyle(part, style)
+	applyGeometry(part, config)
 end
 
 local function styleGateSign(map)
@@ -122,15 +211,6 @@ local function styleGateSign(map)
 	if not signPart or not signPart:IsA("BasePart") then
 		return false
 	end
-
-	watchBasePart(signPart, {
-		Color = COLORS.Sign,
-		Material = Enum.Material.SmoothPlastic,
-		Transparency = 0,
-		CanCollide = false,
-		CanQuery = false,
-		CastShadow = false,
-	})
 
 	local card = signPart:FindFirstChild("SignCard", true)
 	if card and card:IsA("Frame") then
@@ -165,146 +245,79 @@ local function applyFix(map)
 		return
 	end
 
-	local deadline = os.clock() + FIND_TIMEOUT_SECONDS
-	while os.clock() < deadline and not findDescendant(map, "NextAreaGate_Door") do
-		task.wait(0.1)
-	end
+	local separated = 0
+	local hidden = 0
 
-	local hiddenCount = 0
-	local styledCount = 0
+	for name, config in pairs(GEOMETRY) do
+		local part = findDescendant(map, name)
+		if part and part:IsA("BasePart") then
+			watchGeometry(part, config)
+			separated += 1
+		end
+	end
 
 	for name in pairs(HIDDEN_PART_NAMES) do
 		if hidePart(findDescendant(map, name)) then
-			hiddenCount += 1
+			hidden += 1
 		end
 	end
 
-	for name in pairs(FRAME_PART_NAMES) do
-		local part = findDescendant(map, name)
-		if part and part:IsA("BasePart") then
-			watchBasePart(part, {
-				Color = COLORS.Frame,
-				Material = Enum.Material.SmoothPlastic,
-				Transparency = 0,
-				CanCollide = true,
-				CanQuery = true,
-			})
-			styledCount += 1
-		end
-	end
+	styleGateSign(map)
+	map:SetAttribute("SchoolVisualArtifactFix", STYLE_VERSION)
+	map:SetAttribute("SchoolFacadeSeparatedParts", separated)
+	print(
+		"[SchoolVisualArtifactFix] Geometry separated="
+			.. tostring(separated)
+			.. " hidden="
+			.. tostring(hidden)
+	)
+end
 
-	for name in pairs(WINDOW_PART_NAMES) do
-		local part = findDescendant(map, name)
-		if part and part:IsA("BasePart") then
-			watchBasePart(part, {
-				Color = COLORS.Window,
-				Material = Enum.Material.Glass,
-				Transparency = 0.18,
-				CanCollide = false,
-				CanQuery = false,
-				CastShadow = false,
-			})
-			styledCount += 1
-		end
-	end
-
-	local door = findDescendant(map, "NextAreaGate_Door")
-	if door and door:IsA("BasePart") then
-		watchBasePart(door, {
-			Color = COLORS.Door,
-			Material = Enum.Material.SmoothPlastic,
-			Transparency = 0.2,
-			CanCollide = false,
-			CanQuery = true,
-			CastShadow = false,
-		})
-		styledCount += 1
-	else
-		warn("[SchoolVisualArtifactFix] NextAreaGate_Door missing; door cleanup skipped.")
-	end
-
-	if styleGateSign(map) then
-		styledCount += 1
-	end
-
-	map.DescendantAdded:Connect(function(descendant)
-		if not descendant:IsA("BasePart") then
+local function attachToMap(map)
+	local scheduled = false
+	local function scheduleFix(delaySeconds)
+		if scheduled then
 			return
 		end
-
-		if HIDDEN_PART_NAMES[descendant.Name] then
-			task.defer(function()
-				hidePart(descendant)
-			end)
-		elseif FRAME_PART_NAMES[descendant.Name] then
-			task.defer(function()
-				watchBasePart(descendant, {
-					Color = COLORS.Frame,
-					Material = Enum.Material.SmoothPlastic,
-					Transparency = 0,
-					CanCollide = true,
-					CanQuery = true,
-				})
-			end)
-		elseif WINDOW_PART_NAMES[descendant.Name] then
-			task.defer(function()
-				watchBasePart(descendant, {
-					Color = COLORS.Window,
-					Material = Enum.Material.Glass,
-					Transparency = 0.18,
-					CanCollide = false,
-					CanQuery = false,
-					CastShadow = false,
-				})
-			end)
-		elseif descendant.Name == "NextAreaGate_Door" then
-			task.defer(function()
-				watchBasePart(descendant, {
-					Color = COLORS.Door,
-					Material = Enum.Material.SmoothPlastic,
-					Transparency = 0.2,
-					CanCollide = false,
-					CanQuery = true,
-					CastShadow = false,
-				})
-			end)
-		end
-	end)
-
-	for _, delaySeconds in ipairs({ 0.35, 1.35, 2.85 }) do
-		task.delay(delaySeconds, function()
-			if map.Parent then
-				for name in pairs(HIDDEN_PART_NAMES) do
-					hidePart(findDescendant(map, name))
-				end
-				styleGateSign(map)
-			end
+		scheduled = true
+		task.delay(delaySeconds or 0.1, function()
+			scheduled = false
+			applyFix(map)
 		end)
 	end
 
-	map:SetAttribute("SchoolVisualArtifactFix", "DarkFacadeNoBrightPanelsV2")
-	print(
-		"[SchoolVisualArtifactFix] Bright facade removed hidden="
-			.. tostring(hiddenCount)
-			.. " styled="
-			.. tostring(styledCount)
-	)
+	map.DescendantAdded:Connect(function(descendant)
+		if descendant:IsA("BasePart") and (GEOMETRY[descendant.Name] or HIDDEN_PART_NAMES[descendant.Name]) then
+			scheduleFix(0.05)
+		elseif descendant.Name == "SignCard"
+			or descendant.Name == "NextAreaGateTitle"
+			or descendant.Name == "NextAreaGateSubtitle"
+		then
+			scheduleFix(0.05)
+		end
+	end)
+
+	for _, delaySeconds in ipairs({ 0.35, 0.8, 1.5, 2.8 }) do
+		task.delay(delaySeconds, function()
+			applyFix(map)
+		end)
+	end
 end
 
 Workspace.ChildAdded:Connect(function(child)
 	if child.Name == MAP_NAME then
-		task.spawn(applyFix, child)
+		attachToMap(child)
 	end
 end)
 
 local existingMap = Workspace:FindFirstChild(MAP_NAME)
 if existingMap then
-	task.spawn(applyFix, existingMap)
+	attachToMap(existingMap)
 else
 	local map = Workspace:WaitForChild(MAP_NAME, FIND_TIMEOUT_SECONDS)
 	if map then
-		task.spawn(applyFix, map)
+		attachToMap(map)
 	else
-		warn("[SchoolVisualArtifactFix] SimpleMap missing; fix disabled.")
+		warn("[SchoolVisualArtifactFix] SimpleMap missing; overlap fix disabled.")
 	end
 end
