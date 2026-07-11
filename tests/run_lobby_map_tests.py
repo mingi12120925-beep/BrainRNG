@@ -10,6 +10,7 @@ WORLD_BUILDER = ROOT / "src" / "ServerScriptService" / "SimpleWorldBuilder.lua"
 GAME_SERVER = ROOT / "src" / "ServerScriptService" / "GameServer.server.lua"
 DATA_MANAGER = ROOT / "src" / "ServerScriptService" / "DataManager.lua"
 LOADING_CONTROLLER = ROOT / "src" / "StarterPlayer" / "StarterPlayerScripts" / "LoadingController.lua"
+UI_CONTROLLER = ROOT / "src" / "StarterPlayer" / "StarterPlayerScripts" / "UIController.client.lua"
 
 
 class CheckFailure:
@@ -141,6 +142,34 @@ def check_functional_names(builder: str, game_server: str) -> None:
             'tag(pad, "WinPad")',
         ],
     )
+
+
+def check_streaming_safe_area2_return_prompt(game_server: str, ui_controller: str) -> None:
+    require_contains(
+        "Server-owned Area 2 return prompt",
+        game_server,
+        [
+            "local function connectArea2ReturnPrompt()",
+            'simpleMap:FindFirstChild("Area2ReturnPrompt", true)',
+            "area2ReturnPromptConnection = prompt.Triggered:Connect(function(player)",
+            "handleReturnToLobbyRequest(player)",
+            "task.defer(connectArea2ReturnPrompt)",
+            'print("[Area2ReturnPrompt] Server connected")',
+        ],
+        GAME_SERVER,
+    )
+
+    for forbidden_client_lookup in [
+        'local ReturnToLobbyRequest = remotesFolder:WaitForChild("ReturnToLobbyRequest")',
+        "UISections.connectArea2ReturnPrompt()",
+        "[Area2ReturnPrompt] Missing after retry",
+    ]:
+        if forbidden_client_lookup in ui_controller:
+            fail(
+                "Streaming-safe Area 2 return prompt",
+                f"UIController should not depend on the distant streamed prompt: {forbidden_client_lookup!r}.",
+                UI_CONTROLLER,
+            )
 
     require_contains(
         "Existing server lookup names",
@@ -289,10 +318,12 @@ def main() -> int:
     game_server = read_text(GAME_SERVER)
     data_manager = read_text(DATA_MANAGER)
     loading_controller = read_text(LOADING_CONTROLLER)
+    ui_controller = read_text(UI_CONTROLLER)
 
     check_lobby_root_and_folders(builder)
     check_required_geometry(builder)
     check_functional_names(builder, game_server)
+    check_streaming_safe_area2_return_prompt(game_server, ui_controller)
     check_visual_policy(builder)
     check_lighting_and_performance(builder)
     check_existing_systems(data_manager, loading_controller, game_server)
