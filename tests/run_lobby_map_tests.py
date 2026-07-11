@@ -55,6 +55,8 @@ def check_lobby_root_and_folders(builder: str) -> None:
             'folder(map, "World")',
             "folder(world, LOBBY_NAME)",
             'map:SetAttribute("Theme", "Prestige0SchoolLobby")',
+            'map:SetAttribute("MapStyle", "ClassicSimulator")',
+            'map:SetAttribute("LayoutVersion", 2)',
         ],
     )
 
@@ -70,6 +72,7 @@ def check_lobby_root_and_folders(builder: str) -> None:
         "ShopArea",
         "AttendanceArea",
         "Paths",
+        "Boundary",
         "Decorations",
         "InteractionZones",
         "Debug",
@@ -82,18 +85,19 @@ def check_required_geometry(builder: str) -> None:
         "Main campus geometry",
         builder,
         [
-            '"P0_MainGround", Vector3.new(190, 2, 190), Vector3.new(0, -1, 0)',
-            '"P0_CampusBase", Vector3.new(150, 0.3, 150), Vector3.new(0, 0.15, 0)',
-            '"P0_SpawnPlatform", Vector3.new(38, 1.5, 20), Vector3.new(0, 0.75, -76)',
-            'spawn.Position = Vector3.new(0, 2, -76)',
-            '"P0_RollPlaza_Base", Vector3.new(42, 1.6, 42), Vector3.new(0, 0.8, 0)',
-            '"P0_GatePlatform", Vector3.new(46, 1.6, 28), Vector3.new(0, 0.8, 68)',
-            '"P0_QuestBase", Vector3.new(36, 1.6, 30), Vector3.new(-62, 0.8, 2)',
-            '"P0_ChestBase", Vector3.new(38, 1.6, 30), Vector3.new(62, 0.8, 2)',
-            '"P0_ResearchBase", Vector3.new(48, 1.4, 22), Vector3.new(0, 0.7, -52)',
-            '"P0_RankingBase", Vector3.new(34, 1.2, 18), Vector3.new(-65, 0.6, -50)',
-            '"P0_ShopBase", Vector3.new(28, 1.2, 18), Vector3.new(65, 0.6, -50)',
-            '"P0_AttendanceBase", Vector3.new(16, 1, 12), Vector3.new(25, 0.5, -68)',
+            '"P0_MainGround", Vector3.new(180, 2, 180), Vector3.new(0, -1, 0)',
+            '"P0_MainPath", Vector3.new(18, 0.4, 146), Vector3.new(0, 0.2, -5)',
+            '"P0_CentralPlaza", Vector3.new(0.6, 64, 64), Vector3.new(0, 0.3, -6)',
+            '"P0_SpawnPlatform", Vector3.new(22, 0.6, 14), Vector3.new(0, 0.3, -78)',
+            'spawn.Position = Vector3.new(0, 2, -78)',
+            '"P0_School_MainBody", Vector3.new(60, 22, 20), Vector3.new(0, 11, 79)',
+            '"P0_QuestBooth_Floor", Vector3.new(24, 0.8, 18), Vector3.new(-47, 0.4, -6)',
+            '"P0_ChestBooth_Floor", Vector3.new(24, 0.8, 18), Vector3.new(47, 0.4, -6)',
+            '"P0_ResearchKiosk_Base", Vector3.new(22, 0.8, 14), Vector3.new(-54, 0.4, -55)',
+            '"P0_RankingBase", Vector3.new(20, 0.8, 12), Vector3.new(-67, 0.4, 39)',
+            '"P0_ShopBase", Vector3.new(20, 0.8, 16), Vector3.new(66, 0.4, 38)',
+            '"P0_AttendanceBase", Vector3.new(18, 0.8, 12), Vector3.new(48, 0.4, -61)',
+            '"P0_BoundaryNorth", Vector3.new(180, 24, 2), Vector3.new(0, 12, 90)',
         ],
     )
 
@@ -147,7 +151,6 @@ def check_visual_policy(builder: str) -> None:
         "School visual labels",
         builder,
         [
-            '"BRAIN RNG SCHOOL"',
             "ROLL IQ",
             "TAP TO GROW",
             '"P0_RollPedestal_FixedSign"',
@@ -162,6 +165,7 @@ def check_visual_policy(builder: str) -> None:
             '"P0_GateFixedSign"',
             '"P0_Area2ReturnFixedSign"',
             '"RETURN TO LOBBY"',
+            '"ClassicSimulator"',
         ],
     )
 
@@ -173,6 +177,11 @@ def check_visual_policy(builder: str) -> None:
         '"LegacyZone3"',
         '"ZONE 2 ARCHIVE"',
         '"ZONE 3 ARCHIVE"',
+        '"P0_CampusBase"',
+        '"P0_RollPlaza_Base"',
+        '"P0_GatePlatform"',
+        '"P0_SpawnArch_Left"',
+        '"P0_GateSchoolPreview"',
     ]
     found = [needle for needle in forbidden if needle in builder]
     if found:
@@ -220,12 +229,12 @@ def check_lighting_and_performance(builder: str) -> None:
         "Lighting values",
         builder,
         [
-            "Lighting.ClockTime = 14",
+            "Lighting.ClockTime = 13.5",
             "Lighting.Brightness = 2.2",
             "Lighting.GlobalShadows = true",
             "Lighting.ShadowSoftness = 0.35",
-            "Lighting.Ambient = Color3.fromRGB(120, 125, 135)",
-            "Lighting.OutdoorAmbient = Color3.fromRGB(150, 155, 165)",
+            "Lighting.Ambient = Color3.fromRGB(128, 137, 150)",
+            "Lighting.OutdoorAmbient = Color3.fromRGB(170, 180, 190)",
             "Lighting.EnvironmentDiffuseScale = 0.35",
             "Lighting.EnvironmentSpecularScale = 0.25",
             "atmosphere.Density = 0.18",
