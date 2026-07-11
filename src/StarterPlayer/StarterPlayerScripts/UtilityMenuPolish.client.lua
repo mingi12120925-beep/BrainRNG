@@ -3,6 +3,7 @@
 -- No new UI is created; this script only adjusts existing elements.
 
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -10,9 +11,14 @@ local playerGui = player:WaitForChild("PlayerGui")
 local UI_NAME = "BrainRNG_UI"
 local FIND_TIMEOUT_SECONDS = 30
 local TARGET_MENU_HEIGHT = 240
+local WIDE_SHORT_MIN_WIDTH = 850
+local WIDE_SHORT_MAX_HEIGHT = 500
+local WIDE_SHORT_MENU_Y_SCALE = 0.52
+local WIDE_SHORT_RIGHT_MARGIN = 10
 
 local activeGui = nil
 local activeGuiConnection = nil
+local cameraViewportConnection = nil
 
 local function polishBadge(button, badgeName)
 	if not button or not button:IsA("GuiObject") then
@@ -37,6 +43,16 @@ local function polishBadge(button, badgeName)
 	return true
 end
 
+local function isWideShortViewport()
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return false
+	end
+
+	local viewport = camera.ViewportSize
+	return viewport.X >= WIDE_SHORT_MIN_WIDTH and viewport.Y <= WIDE_SHORT_MAX_HEIGHT
+end
+
 local function applyPolish()
 	local screenGui = activeGui
 	if not screenGui or not screenGui.Parent then
@@ -49,6 +65,14 @@ local function applyPolish()
 		-- Six extra pixels leave a small bottom pad without the long empty strip.
 		utilityMenu.Size = UDim2.new(0, 140, 0, TARGET_MENU_HEIGHT)
 		utilityMenu.ClipsDescendants = false
+
+		-- In a short but wide PC window, the Roblox top inset pushes LuckBar low
+		-- enough to overlap Concepts. Move only the utility menu down and leave all
+		-- other responsive modes under ResponsiveUILayout's control.
+		if isWideShortViewport() then
+			utilityMenu.AnchorPoint = Vector2.new(1, 0.5)
+			utilityMenu.Position = UDim2.new(1, -WIDE_SHORT_RIGHT_MARGIN, WIDE_SHORT_MENU_Y_SCALE, 0)
+		end
 	end
 
 	local questButton = utilityMenu and utilityMenu:FindFirstChild("QuestButton")
@@ -59,8 +83,15 @@ local function applyPolish()
 
 	if utilityMenu and questReady and chestReady and not utilityMenu:GetAttribute("UtilityMenuPolishLogged") then
 		utilityMenu:SetAttribute("UtilityMenuPolishLogged", true)
-		print("[UtilityMenuPolish] Applied safe badge positions and compact menu height")
+		print("[UtilityMenuPolish] Applied safe badges, compact height, and wide-short spacing")
 	end
+end
+
+local function schedulePolish()
+	-- ResponsiveUILayout also reacts to viewport changes. Apply immediately and
+	-- once more just after it so the wide-short spacing wins deterministically.
+	task.defer(applyPolish)
+	task.delay(0.05, applyPolish)
 end
 
 local function disconnectActiveGuiConnection()
@@ -68,6 +99,20 @@ local function disconnectActiveGuiConnection()
 		activeGuiConnection:Disconnect()
 		activeGuiConnection = nil
 	end
+end
+
+local function connectCamera()
+	if cameraViewportConnection then
+		cameraViewportConnection:Disconnect()
+		cameraViewportConnection = nil
+	end
+
+	local camera = Workspace.CurrentCamera
+	if camera then
+		cameraViewportConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(schedulePolish)
+	end
+
+	schedulePolish()
 end
 
 local function attach(screenGui)
@@ -83,7 +128,7 @@ local function attach(screenGui)
 				or descendant.Name == "QuestReadyBadge"
 				or descendant.Name == "ChestReadyBadge"
 			then
-				task.defer(applyPolish)
+				schedulePolish()
 			end
 		end)
 	end
@@ -108,6 +153,9 @@ local function findUi()
 
 	warn("[UtilityMenuPolish] BrainRNG_UI missing; polish disabled.")
 end
+
+Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(connectCamera)
+connectCamera()
 
 playerGui.ChildAdded:Connect(function(child)
 	if child.Name == UI_NAME and child:IsA("ScreenGui") then
