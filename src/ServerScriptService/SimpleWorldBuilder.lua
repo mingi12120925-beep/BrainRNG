@@ -6,6 +6,7 @@ local SimpleWorldBuilder = {}
 
 local MAP_NAME = "SimpleMap"
 local LOBBY_NAME = "Lobby_Prestige0_School"
+local WORLD_SCALE = 1.45
 local COLORS = {
 	WarmWhite = Color3.fromRGB(244, 239, 221),
 	SchoolBlue = Color3.fromRGB(73, 132, 197),
@@ -25,7 +26,13 @@ local COLORS = {
 	Wood = Color3.fromRGB(126, 84, 52),
 	Slate = Color3.fromRGB(72, 84, 98),
 	Rock = Color3.fromRGB(133, 147, 151),
+	Earth = Color3.fromRGB(111, 91, 63),
+	OuterGrass = Color3.fromRGB(78, 176, 75),
 }
+
+local function worldVector(value)
+	return value * WORLD_SCALE
+end
 
 local function tag(instance, tagName)
 	if not CollectionService:HasTag(instance, tagName) then
@@ -45,8 +52,8 @@ local function part(parent, name, size, position, options)
 
 	local item = Instance.new("Part")
 	item.Name = name
-	item.Size = size
-	item.Position = position
+	item.Size = worldVector(size)
+	item.Position = worldVector(position)
 	item.Anchored = true
 	item.Material = options.Material or Enum.Material.SmoothPlastic
 	item.Color = options.Color or COLORS.WarmWhite
@@ -162,7 +169,7 @@ local function prompt(parent, name, actionText, objectText)
 	item.ActionText = actionText
 	item.ObjectText = objectText
 	item.HoldDuration = 0
-	item.MaxActivationDistance = 12
+	item.MaxActivationDistance = 12 * WORLD_SCALE
 	item.RequiresLineOfSight = false
 	item.Enabled = true
 	item.Parent = parent
@@ -227,7 +234,7 @@ local function makeLamp(parent, name, position)
 	local light = Instance.new("PointLight")
 	light.Name = "SoftCampusLight"
 	light.Color = COLORS.WarmWhite
-	light.Range = 14
+	light.Range = 14 * WORLD_SCALE
 	light.Brightness = 0.65
 	light.Parent = head
 	return pole
@@ -317,8 +324,35 @@ local function createWinPad(parent, name, position, rewardWins)
 end
 
 local function createGround(lobby)
-	part(lobby.Ground, "P0_MainGround", Vector3.new(180, 2, 180), Vector3.new(0, -1, 0), {
+	part(lobby.Ground, "P0_WorldTerrainMass", Vector3.new(380, 20, 400), Vector3.new(0, -10, 0), {
+		Color = COLORS.Earth,
+		Material = Enum.Material.Ground,
+		CanCollide = true,
+	})
+	part(lobby.Ground, "P0_GrassField_Core", Vector3.new(374, 1.6, 394), Vector3.new(0, -0.8, 0), {
 		Color = COLORS.GrassGreen,
+		Material = Enum.Material.Grass,
+		CanCollide = true,
+	})
+
+	-- Raised landscape outside the playable boundary hides the square edge and gives the lobby a world-scale horizon.
+	part(lobby.Ground, "P0_OuterLand_West", Vector3.new(58, 4, 250), Vector3.new(-128, 0.6, 8), {
+		Color = COLORS.OuterGrass,
+		Material = Enum.Material.Grass,
+		CanCollide = true,
+	})
+	part(lobby.Ground, "P0_OuterLand_East", Vector3.new(58, 4, 250), Vector3.new(128, 0.6, 8), {
+		Color = COLORS.OuterGrass,
+		Material = Enum.Material.Grass,
+		CanCollide = true,
+	})
+	part(lobby.Ground, "P0_OuterLand_North", Vector3.new(246, 5.5, 72), Vector3.new(0, 1, 127), {
+		Color = COLORS.OuterGrass,
+		Material = Enum.Material.Grass,
+		CanCollide = true,
+	})
+	part(lobby.Ground, "P0_OuterLand_South", Vector3.new(246, 4.5, 76), Vector3.new(0, 0.6, -127), {
+		Color = COLORS.OuterGrass,
 		Material = Enum.Material.Grass,
 		CanCollide = true,
 	})
@@ -362,8 +396,8 @@ local function createSpawn(map, lobby)
 
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Name = "SpawnLocation"
-	spawn.Position = Vector3.new(0, 2, -78)
-	spawn.Size = Vector3.new(8, 1, 8)
+	spawn.Position = worldVector(Vector3.new(0, 2, -78))
+	spawn.Size = worldVector(Vector3.new(8, 1, 8))
 	spawn.Anchored = true
 	spawn.Transparency = 1
 	spawn.CanCollide = false
@@ -580,6 +614,23 @@ local function createBoundary(lobby)
 	}) do
 		makeBoundaryHill(boundary, "P0_BoundaryHill_" .. tostring(index), data[1], data[2])
 	end
+
+	for index, data in ipairs({
+		{ Vector3.new(-128, 5, -112), Vector3.new(72, 18, 48) },
+		{ Vector3.new(-55, 5, -142), Vector3.new(88, 20, 44) },
+		{ Vector3.new(48, 5, -144), Vector3.new(96, 19, 46) },
+		{ Vector3.new(128, 5, -108), Vector3.new(70, 18, 50) },
+		{ Vector3.new(-132, 6, 108), Vector3.new(72, 22, 54) },
+		{ Vector3.new(-54, 6, 143), Vector3.new(92, 23, 48) },
+		{ Vector3.new(52, 6, 145), Vector3.new(96, 22, 50) },
+		{ Vector3.new(132, 6, 110), Vector3.new(72, 21, 54) },
+		{ Vector3.new(-146, 5, -40), Vector3.new(46, 20, 92) },
+		{ Vector3.new(-145, 5, 54), Vector3.new(48, 21, 98) },
+		{ Vector3.new(146, 5, -38), Vector3.new(46, 20, 94) },
+		{ Vector3.new(145, 5, 56), Vector3.new(48, 21, 100) },
+	}) do
+		makeBoundaryHill(boundary, "P0_DistantLandscape_" .. tostring(index), data[1], data[2])
+	end
 end
 
 local function createDecorations(lobby)
@@ -717,7 +768,9 @@ function SimpleWorldBuilder.CreateMap()
 	local map = folder(Workspace, MAP_NAME)
 	map:SetAttribute("Theme", "Prestige0SchoolLobby")
 	map:SetAttribute("MapStyle", "ClassicSimulator")
-	map:SetAttribute("LayoutVersion", 2)
+	map:SetAttribute("LayoutVersion", 3)
+	map:SetAttribute("WorldScale", WORLD_SCALE)
+	map:SetAttribute("GroundStyle", "ExtendedLandscape")
 
 	local lobby = createLobbyFolders(map)
 	createGround(lobby)
@@ -735,7 +788,7 @@ function SimpleWorldBuilder.CreateMap()
 	createArea2Preview(map)
 	createWinPad(map, "WinPad_Plaza", Vector3.new(22, 1, 34), 1)
 
-	print("[SimpleWorldBuilder] Classic simulator school lobby created. Children:", #map:GetChildren())
+	print("[SimpleWorldBuilder] Full-scale simulator school lobby created. Children:", #map:GetChildren())
 	return map
 end
 
