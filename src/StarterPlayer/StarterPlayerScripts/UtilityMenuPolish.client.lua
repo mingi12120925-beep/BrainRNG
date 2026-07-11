@@ -133,6 +133,17 @@ local function restoreNativeScale(guiObject)
 	end
 end
 
+local function sharpenText(textObject, textSize)
+	if not textObject or not (textObject:IsA("TextLabel") or textObject:IsA("TextButton")) then
+		return
+	end
+
+	textObject.TextScaled = false
+	textObject.TextSize = textSize
+	textObject.Font = Enum.Font.GothamBold
+	textObject.TextStrokeTransparency = 1
+end
+
 local function polishBadge(button, badgeName, badgeSize)
 	if not button or not button:IsA("GuiObject") then
 		return false
@@ -150,6 +161,8 @@ local function polishBadge(button, badgeName, badgeSize)
 	if badge:IsA("TextLabel") or badge:IsA("TextButton") then
 		badge.TextScaled = false
 		badge.TextSize = math.max(12, badgeSize - 8)
+		badge.Font = Enum.Font.GothamBold
+		badge.TextStrokeTransparency = 1
 	end
 
 	return true
@@ -173,11 +186,7 @@ local function applyPolish()
 		luckBar.AnchorPoint = Vector2.new(1, 0)
 		luckBar.Position = UDim2.new(1, -config.RightMargin, 0, topInset + config.TopMargin)
 		luckBar.Size = UDim2.fromOffset(config.LuckWidth, config.LuckHeight)
-
-		if luckBar:IsA("TextLabel") or luckBar:IsA("TextButton") then
-			luckBar.TextScaled = false
-			luckBar.TextSize = config.LuckTextSize
-		end
+		sharpenText(luckBar, config.LuckTextSize)
 	end
 
 	local utilityMenu = screenGui:FindFirstChild("UtilityMenuFrame")
@@ -200,9 +209,8 @@ local function applyPolish()
 				button.AnchorPoint = Vector2.zero
 				button.Position = UDim2.fromOffset(0, (index - 1) * (buttonHeight + config.ButtonGap))
 				button.Size = UDim2.new(1, 0, 0, buttonHeight)
-				button.TextScaled = false
-				button.TextSize = config.ButtonTextSize
 				button.TextWrapped = true
+				sharpenText(button, config.ButtonTextSize)
 			else
 				allButtonsReady = false
 			end
@@ -220,7 +228,7 @@ local function applyPolish()
 		print(
 			"[UtilityMenuPolish] Mode="
 				.. mode
-				.. " native-scale menu="
+				.. " native-scale sharp-text menu="
 				.. tostring(config.MenuWidth)
 				.. "px viewport="
 				.. tostring(math.floor(viewport.X))
@@ -231,10 +239,8 @@ local function applyPolish()
 end
 
 local function schedulePolish()
-	-- ResponsiveUILayout may apply fractional scales first. Re-apply after it so
-	-- text-heavy menu controls always finish at native scale with integer sizes.
 	task.defer(applyPolish)
-	task.delay(0.06, applyPolish)
+	task.delay(0.05, applyPolish)
 end
 
 local function disconnectActiveGuiConnection()
@@ -266,10 +272,8 @@ local function attach(screenGui)
 	if activeGui ~= screenGui then
 		disconnectActiveGuiConnection()
 		activeGui = screenGui
-		lastMode = nil
 		activeGuiConnection = screenGui.DescendantAdded:Connect(function(descendant)
 			if descendant.Name == "UtilityMenuFrame"
-				or descendant.Name == "LuckBar"
 				or descendant.Name == "QuestReadyBadge"
 				or descendant.Name == "ChestReadyBadge"
 			then
