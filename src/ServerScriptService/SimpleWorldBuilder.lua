@@ -325,7 +325,8 @@ local function createWinPad(parent, name, position, rewardWins)
 end
 
 local function createGround(lobby)
-	part(lobby.Ground, "P0_WorldTerrainMass", Vector3.new(380, 20, 400), Vector3.new(0, -10, 0), {
+	-- Keep the soil top below the grass top; coplanar giant faces cause visible z-fighting in Studio.
+	part(lobby.Ground, "P0_WorldTerrainMass", Vector3.new(380, 20, 400), Vector3.new(0, -11, 0), {
 		Color = COLORS.Earth,
 		Material = Enum.Material.Ground,
 		CanCollide = true,
@@ -769,7 +770,7 @@ function SimpleWorldBuilder.CreateMap()
 	local map = folder(Workspace, MAP_NAME)
 	map:SetAttribute("Theme", "Prestige0SchoolLobby")
 	map:SetAttribute("MapStyle", "ClassicSimulator")
-	map:SetAttribute("LayoutVersion", 4)
+	map:SetAttribute("LayoutVersion", 5)
 	map:SetAttribute("WorldScale", WORLD_SCALE)
 	map:SetAttribute("InteractionDistance", PROMPT_DISTANCE)
 	map:SetAttribute("GroundStyle", "ExtendedLandscape")
