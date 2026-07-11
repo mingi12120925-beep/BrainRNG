@@ -103,6 +103,8 @@ local nextAreaRequestLastAtByUserId = {}
 local returnToLobbyLastAtByUserId = {}
 local worldChestPromptConnection = nil
 local worldChestConnectedPrompt = nil
+local area2ReturnPromptConnection = nil
+local area2ReturnConnectedPrompt = nil
 
 local BRAIN_SURGE_TARGET = 10
 local BRAIN_SURGE_MULTIPLIER = 2
@@ -1478,6 +1480,32 @@ local function connectWorldChestPrompt()
 	end)
 end
 
+local function connectArea2ReturnPrompt()
+	local simpleMap = Workspace:FindFirstChild("SimpleMap")
+	local prompt = simpleMap and simpleMap:FindFirstChild("Area2ReturnPrompt", true)
+
+	if not prompt or not prompt:IsA("ProximityPrompt") then
+		warn("[Area2ReturnPrompt] Server prompt missing; connection skipped.")
+		return
+	end
+
+	if area2ReturnConnectedPrompt == prompt and area2ReturnPromptConnection then
+		return
+	end
+
+	if area2ReturnPromptConnection then
+		area2ReturnPromptConnection:Disconnect()
+		area2ReturnPromptConnection = nil
+	end
+
+	area2ReturnConnectedPrompt = prompt
+	area2ReturnPromptConnection = prompt.Triggered:Connect(function(player)
+		handleReturnToLobbyRequest(player)
+	end)
+
+	print("[Area2ReturnPrompt] Server connected")
+end
+
 local function getAdminSaveState(player)
 	local userId = player.UserId
 	local state = adminSaveStates[userId]
@@ -1960,6 +1988,7 @@ NextAreaRequest.OnServerEvent:Connect(handleNextAreaRequest)
 ReturnToLobbyRequest.OnServerEvent:Connect(handleReturnToLobbyRequest)
 
 task.defer(connectWorldChestPrompt)
+task.defer(connectArea2ReturnPrompt)
 
 local function handlePlayerAdded(player)
 	if playerLoadStarted[player.UserId] then
