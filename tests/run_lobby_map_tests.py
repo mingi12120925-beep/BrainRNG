@@ -56,8 +56,9 @@ def check_lobby_root_and_folders(builder: str) -> None:
             "folder(world, LOBBY_NAME)",
             'map:SetAttribute("Theme", "Prestige0SchoolLobby")',
             'map:SetAttribute("MapStyle", "ClassicSimulator")',
-            'map:SetAttribute("LayoutVersion", 3)',
+            'map:SetAttribute("LayoutVersion", 4)',
             'map:SetAttribute("WorldScale", WORLD_SCALE)',
+            'map:SetAttribute("InteractionDistance", PROMPT_DISTANCE)',
             'map:SetAttribute("GroundStyle", "ExtendedLandscape")',
         ],
     )
@@ -87,7 +88,8 @@ def check_required_geometry(builder: str) -> None:
         "Main campus geometry",
         builder,
         [
-            "local WORLD_SCALE = 1.45",
+            "local WORLD_SCALE = 2.5",
+            "local PROMPT_DISTANCE = 18",
             '"P0_WorldTerrainMass", Vector3.new(380, 20, 400), Vector3.new(0, -10, 0)',
             '"P0_GrassField_Core", Vector3.new(374, 1.6, 394), Vector3.new(0, -0.8, 0)',
             '"P0_OuterLand_West", Vector3.new(58, 4, 250), Vector3.new(-128, 0.6, 8)',
@@ -224,6 +226,7 @@ def check_visual_policy(builder: str) -> None:
         "Prompts retained",
         builder,
         [
+            "item.MaxActivationDistance = PROMPT_DISTANCE",
             '"QuestOpenPrompt"',
             '"ChestOpenPrompt"',
             '"NextAreaPrompt"',
