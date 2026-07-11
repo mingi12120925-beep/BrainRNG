@@ -56,7 +56,9 @@ def check_lobby_root_and_folders(builder: str) -> None:
             "folder(world, LOBBY_NAME)",
             'map:SetAttribute("Theme", "Prestige0SchoolLobby")',
             'map:SetAttribute("MapStyle", "ClassicSimulator")',
-            'map:SetAttribute("LayoutVersion", 2)',
+            'map:SetAttribute("LayoutVersion", 3)',
+            'map:SetAttribute("WorldScale", WORLD_SCALE)',
+            'map:SetAttribute("GroundStyle", "ExtendedLandscape")',
         ],
     )
 
@@ -85,11 +87,16 @@ def check_required_geometry(builder: str) -> None:
         "Main campus geometry",
         builder,
         [
-            '"P0_MainGround", Vector3.new(180, 2, 180), Vector3.new(0, -1, 0)',
+            "local WORLD_SCALE = 1.45",
+            '"P0_WorldTerrainMass", Vector3.new(380, 20, 400), Vector3.new(0, -10, 0)',
+            '"P0_GrassField_Core", Vector3.new(374, 1.6, 394), Vector3.new(0, -0.8, 0)',
+            '"P0_OuterLand_West", Vector3.new(58, 4, 250), Vector3.new(-128, 0.6, 8)',
+            '"P0_OuterLand_North", Vector3.new(246, 5.5, 72), Vector3.new(0, 1, 127)',
+            '"P0_DistantLandscape_"',
             '"P0_MainPath", Vector3.new(18, 0.4, 146), Vector3.new(0, 0.2, -5)',
             '"P0_CentralPlaza", Vector3.new(0.6, 64, 64), Vector3.new(0, 0.3, -6)',
             '"P0_SpawnPlatform", Vector3.new(22, 0.6, 14), Vector3.new(0, 0.3, -78)',
-            'spawn.Position = Vector3.new(0, 2, -78)',
+            'spawn.Position = worldVector(Vector3.new(0, 2, -78))',
             '"P0_School_MainBody", Vector3.new(60, 22, 20), Vector3.new(0, 11, 79)',
             '"P0_QuestBooth_Floor", Vector3.new(24, 0.8, 18), Vector3.new(-47, 0.4, -6)',
             '"P0_ChestBooth_Floor", Vector3.new(24, 0.8, 18), Vector3.new(47, 0.4, -6)',
@@ -182,6 +189,7 @@ def check_visual_policy(builder: str) -> None:
         '"P0_GatePlatform"',
         '"P0_SpawnArch_Left"',
         '"P0_GateSchoolPreview"',
+        '"P0_MainGround"',
     ]
     found = [needle for needle in forbidden if needle in builder]
     if found:
