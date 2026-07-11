@@ -1,25 +1,25 @@
 -- ServerScriptService/SimulatorSignStyle.server.lua
--- Applies simple, readable physical signs whose text fits each sign's real size.
+-- Applies large, simple physical signs that remain readable from normal play distance.
 -- Project rule: no floating BillboardGui world UI.
 
 local Workspace = game:GetService("Workspace")
 
 local MAP_NAME = "SimpleMap"
 local FIND_TIMEOUT_SECONDS = 25
-local STYLE_ATTRIBUTE = "CleanAutoFitPhysicalV2"
-local PIXELS_PER_STUD = 36
+local STYLE_ATTRIBUTE = "LargeReadablePhysicalV3"
+local CANVAS_HEIGHT = 512
 
 local COLORS = {
-	Panel = Color3.fromRGB(244, 239, 221),
-	Ink = Color3.fromRGB(27, 38, 52),
-	MutedInk = Color3.fromRGB(82, 92, 105),
+	Panel = Color3.fromRGB(246, 243, 231),
+	Ink = Color3.fromRGB(24, 34, 46),
+	MutedInk = Color3.fromRGB(61, 72, 84),
 	Blue = Color3.fromRGB(73, 132, 197),
-	Lime = Color3.fromRGB(112, 214, 92),
-	Yellow = Color3.fromRGB(235, 181, 44),
-	Gold = Color3.fromRGB(213, 145, 39),
-	Purple = Color3.fromRGB(136, 91, 213),
-	Pink = Color3.fromRGB(225, 93, 145),
-	Cyan = Color3.fromRGB(47, 168, 195),
+	Lime = Color3.fromRGB(92, 188, 75),
+	Yellow = Color3.fromRGB(221, 164, 32),
+	Gold = Color3.fromRGB(197, 126, 27),
+	Purple = Color3.fromRGB(126, 79, 196),
+	Pink = Color3.fromRGB(210, 77, 130),
+	Cyan = Color3.fromRGB(37, 148, 174),
 }
 
 local SIGN_CONFIGS = {
@@ -165,9 +165,9 @@ local function removePreviousStyle(signPart)
 	end
 end
 
-local function addCorner(parent, scaleRadius)
+local function addCorner(parent, radiusScale)
 	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(scaleRadius, 0)
+	corner.CornerRadius = UDim.new(radiusScale, 0)
 	corner.Parent = parent
 	return corner
 end
@@ -175,9 +175,50 @@ end
 local function addSizeConstraint(label, minSize, maxSize)
 	local constraint = Instance.new("UITextSizeConstraint")
 	constraint.MinTextSize = minSize
-	constraint.MaxTextSize = math.max(minSize, maxSize)
+	constraint.MaxTextSize = maxSize
 	constraint.Parent = label
 	return constraint
+end
+
+local function enforceTextStyle(label, color, font, minSize, maxSize)
+	local applying = false
+
+	local function apply()
+		if applying or not label.Parent then
+			return
+		end
+
+		applying = true
+		label.TextColor3 = color
+		label.TextTransparency = 0
+		label.TextStrokeTransparency = 1
+		label.TextScaled = true
+		label.TextWrapped = true
+		label.Font = font
+		label.LineHeight = 0.9
+
+		local constraint = label:FindFirstChildOfClass("UITextSizeConstraint")
+		if constraint then
+			constraint.MinTextSize = minSize
+			constraint.MaxTextSize = maxSize
+		end
+		applying = false
+	end
+
+	apply()
+
+	for _, propertyName in ipairs({
+		"TextColor3",
+		"TextTransparency",
+		"TextStrokeTransparency",
+		"TextScaled",
+		"TextWrapped",
+		"Font",
+	}) do
+		label:GetPropertyChangedSignal(propertyName):Connect(function()
+			task.defer(apply)
+		end)
+	end
 end
 
 local function createLabel(parent, name, text, position, size, font, color, minSize, maxSize)
@@ -186,17 +227,12 @@ local function createLabel(parent, name, text, position, size, font, color, minS
 	label.BackgroundTransparency = 1
 	label.Position = position
 	label.Size = size
-	label.Font = font
 	label.Text = text
-	label.TextColor3 = color
-	label.TextTransparency = 0
-	label.TextStrokeTransparency = 1
-	label.TextScaled = true
-	label.TextWrapped = false
 	label.TextXAlignment = Enum.TextXAlignment.Center
 	label.TextYAlignment = Enum.TextYAlignment.Center
 	label.Parent = parent
 	addSizeConstraint(label, minSize, maxSize)
+	enforceTextStyle(label, color, font, minSize, maxSize)
 	return label
 end
 
@@ -212,11 +248,10 @@ local function styleSign(signPart, config)
 	removePreviousStyle(signPart)
 
 	local surfaceWidthStuds, surfaceHeightStuds = getSurfaceStudSize(signPart, config.Face)
-	local canvasWidth = math.max(320, math.floor(surfaceWidthStuds * PIXELS_PER_STUD))
-	local canvasHeight = math.max(150, math.floor(surfaceHeightStuds * PIXELS_PER_STUD))
-	local shortSign = canvasHeight < 300
+	local aspectRatio = math.clamp(surfaceWidthStuds / math.max(surfaceHeightStuds, 0.1), 1.1, 4.2)
+	local canvasWidth = math.floor(CANVAS_HEIGHT * aspectRatio)
 
-	signPart.Color = darken(config.Accent, 0.72)
+	signPart.Color = darken(config.Accent, 0.7)
 	signPart.Material = Enum.Material.SmoothPlastic
 	signPart.Transparency = 0
 	signPart.Reflectance = 0
@@ -224,64 +259,60 @@ local function styleSign(signPart, config)
 	local gui = Instance.new("SurfaceGui")
 	gui.Name = config.GuiName or "SimulatorSignSurfaceGui"
 	gui.Face = config.Face
-	gui.LightInfluence = 0.12
+	gui.LightInfluence = 0.08
 	gui.AlwaysOnTop = false
 	gui.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
-	gui.CanvasSize = Vector2.new(canvasWidth, canvasHeight)
+	gui.CanvasSize = Vector2.new(canvasWidth, CANVAS_HEIGHT)
 	gui.Parent = signPart
 
 	local card = Instance.new("Frame")
 	card.Name = "SignCard"
-	card.Position = UDim2.fromScale(0.035, 0.065)
-	card.Size = UDim2.fromScale(0.93, 0.87)
+	card.Position = UDim2.fromScale(0.018, 0.035)
+	card.Size = UDim2.fromScale(0.964, 0.93)
 	card.BackgroundColor3 = COLORS.Panel
 	card.BorderSizePixel = 0
 	card.ClipsDescendants = true
 	card.Parent = gui
-	addCorner(card, 0.07)
+	addCorner(card, 0.045)
 
 	local accentBar = Instance.new("Frame")
 	accentBar.Name = "AccentBar"
 	accentBar.Position = UDim2.fromScale(0, 0)
-	accentBar.Size = UDim2.fromScale(1, shortSign and 0.11 or 0.13)
+	accentBar.Size = UDim2.fromScale(1, 0.055)
 	accentBar.BackgroundColor3 = config.Accent
 	accentBar.BorderSizePixel = 0
 	accentBar.Parent = card
 
-	local titleTop = shortSign and 0.17 or 0.18
-	local titleHeight = shortSign and 0.48 or 0.45
-	local subtitleTop = shortSign and 0.65 or 0.66
-	local subtitleHeight = shortSign and 0.23 or 0.20
-	local titleMax = math.floor(canvasHeight * (shortSign and 0.38 or 0.34))
-	local subtitleMax = math.floor(canvasHeight * (shortSign and 0.18 or 0.15))
-
-	createLabel(
+	local titleColor = darken(config.Accent, 0.48)
+	local title = createLabel(
 		card,
 		config.TitleName or "Title",
 		config.Title,
-		UDim2.fromScale(0.06, titleTop),
-		UDim2.fromScale(0.88, titleHeight),
+		UDim2.fromScale(0.025, 0.08),
+		UDim2.fromScale(0.95, 0.64),
 		Enum.Font.GothamBlack,
-		COLORS.Ink,
-		12,
-		titleMax
+		titleColor,
+		34,
+		230
 	)
 
-	createLabel(
+	local subtitle = createLabel(
 		card,
 		config.SubtitleName or "Subtitle",
 		config.Subtitle,
-		UDim2.fromScale(0.08, subtitleTop),
-		UDim2.fromScale(0.84, subtitleHeight),
+		UDim2.fromScale(0.04, 0.73),
+		UDim2.fromScale(0.92, 0.2),
 		Enum.Font.GothamBold,
 		COLORS.MutedInk,
-		10,
-		subtitleMax
+		22,
+		78
 	)
 
+	title:SetAttribute("LargeReadableSignText", true)
+	subtitle:SetAttribute("LargeReadableSignText", true)
 	signPart:SetAttribute("SimulatorSignStyle", STYLE_ATTRIBUTE)
 	signPart:SetAttribute("SignCanvasWidth", canvasWidth)
-	signPart:SetAttribute("SignCanvasHeight", canvasHeight)
+	signPart:SetAttribute("SignCanvasHeight", CANVAS_HEIGHT)
 	return true
 end
 
@@ -322,7 +353,7 @@ local function applyToMap(map)
 
 	map:SetAttribute("SignStyle", STYLE_ATTRIBUTE)
 	print(
-		"[SimulatorSignStyle] Applied clean fitted signs="
+		"[SimulatorSignStyle] Applied large readable signs="
 			.. tostring(upgraded)
 			.. " removedBillboards="
 			.. tostring(removedBillboards)
