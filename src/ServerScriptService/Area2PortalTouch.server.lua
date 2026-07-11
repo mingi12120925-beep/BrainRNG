@@ -1,6 +1,6 @@
 -- ServerScriptService/Area2PortalTouch.server.lua
--- Temporary server-side touch portal patch.
--- Remove this file after the behavior is integrated into GameServer/SimpleWorldBuilder.
+-- Temporary isolated Area 2 touch-portal system.
+-- Keep this separate until Codex can safely integrate it into GameServer/SimpleWorldBuilder.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,8 +14,35 @@ local MAP_NAME = "SimpleMap"
 local REQUIRED_IQ = 10000
 local PORTAL_LOCK_SECONDS = 1.5
 local MAP_WAIT_SECONDS = 30
+local FADE_OUT_WAIT_SECONDS = 0.22
+local FADE_IN_DELAY_SECONDS = 0.08
 
 local lockedUntilByUserId = {}
+
+local function getOrCreateTransitionEvent()
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then
+		remotes = Instance.new("Folder")
+		remotes.Name = "Remotes"
+		remotes.Parent = ReplicatedStorage
+	end
+
+	local event = remotes:FindFirstChild("PortalTransitionEvent")
+	if event and event:IsA("RemoteEvent") then
+		return event
+	end
+
+	if event then
+		event:Destroy()
+	end
+
+	event = Instance.new("RemoteEvent")
+	event.Name = "PortalTransitionEvent"
+	event.Parent = remotes
+	return event
+end
+
+local transitionEvent = getOrCreateTransitionEvent()
 
 local function showPopup(player, message)
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
@@ -117,6 +144,44 @@ local function makeTrigger(parent, name, triggerCFrame, triggerSize)
 	return trigger
 end
 
+local function beginTransition(player, destinationLabel)
+	transitionEvent:FireClient(player, "Begin", destinationLabel)
+	task.wait(FADE_OUT_WAIT_SECONDS)
+end
+
+local function finishTransition(player)
+	task.delay(FADE_IN_DELAY_SECONDS, function()
+		if player and player.Parent then
+			transitionEvent:FireClient(player, "Finish")
+		end
+	end)
+end
+
+local function performPortalMove(player, character, root, targetCFrame, direction)
+	beginTransition(player, direction == "Enter" and "AREA 2" or "LOBBY")
+
+	if not player.Parent or not character.Parent or not root.Parent then
+		finishTransition(player)
+		return false, "Character removed during transition"
+	end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then
+		finishTransition(player)
+		return false, "Character died during transition"
+	end
+
+	local moved, moveError = moveCharacter(character, root, targetCFrame)
+	finishTransition(player)
+
+	if not moved then
+		return false, moveError
+	end
+
+	print("[Area2Portal] " .. direction .. " player=" .. player.Name)
+	return true
+end
+
 local map = Workspace:WaitForChild(MAP_NAME, MAP_WAIT_SECONDS)
 if not map then
 	warn("[Area2PortalTouch] SimpleMap missing; touch portals not connected.")
@@ -197,14 +262,20 @@ entranceTrigger.Touched:Connect(function(hit)
 		return
 	end
 
-	local moved, moveError = moveCharacter(character, root, arrivalPad.CFrame + Vector3.new(0, 5, 0))
+	local moved, moveError = performPortalMove(
+		player,
+		character,
+		root,
+		arrivalPad.CFrame + Vector3.new(0, 5, 0),
+		"Enter"
+	)
+
 	if not moved then
 		warn("[Area2Portal] Enter failed player=" .. player.Name .. " error=" .. tostring(moveError))
 		showPopup(player, "AREA UNAVAILABLE|Try again soon")
 		return
 	end
 
-	print("[Area2Portal] Enter player=" .. player.Name)
 	showPopup(player, "AREA 2 PREVIEW|Full area coming soon")
 end)
 
@@ -214,14 +285,20 @@ returnTrigger.Touched:Connect(function(hit)
 		return
 	end
 
-	local moved, moveError = moveCharacter(character, root, lobbySpawn.CFrame + Vector3.new(0, 5, 0))
+	local moved, moveError = performPortalMove(
+		player,
+		character,
+		root,
+		lobbySpawn.CFrame + Vector3.new(0, 5, 0),
+		"Return"
+	)
+
 	if not moved then
 		warn("[Area2Portal] Return failed player=" .. player.Name .. " error=" .. tostring(moveError))
 		showPopup(player, "RETURN FAILED|Lobby spawn not found")
 		return
 	end
 
-	print("[Area2Portal] Return player=" .. player.Name)
 	showPopup(player, "LOBBY|Returned to lobby")
 end)
 
@@ -229,4 +306,10 @@ Players.PlayerRemoving:Connect(function(player)
 	lockedUntilByUserId[player.UserId] = nil
 end)
 
-print("[Area2PortalTouch] Connected entrance=" .. entranceTrigger:GetFullName() .. " return=" .. returnTrigger:GetFullName())
+print(
+	"[Area2PortalTouch] Connected entrance="
+		.. entranceTrigger:GetFullName()
+		.. " return="
+		.. returnTrigger:GetFullName()
+		.. " transition=enabled"
+)
