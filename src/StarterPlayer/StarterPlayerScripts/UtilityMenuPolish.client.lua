@@ -15,6 +15,7 @@ local WIDE_SHORT_MIN_WIDTH = 850
 local WIDE_SHORT_MAX_HEIGHT = 500
 local WIDE_SHORT_MENU_Y_SCALE = 0.52
 local WIDE_SHORT_RIGHT_MARGIN = 10
+local RESPONSIVE_SCALE_NAME = "ResponsiveUILayoutScale"
 
 local activeGui = nil
 local activeGuiConnection = nil
@@ -53,6 +54,17 @@ local function isWideShortViewport()
 	return viewport.X >= WIDE_SHORT_MIN_WIDTH and viewport.Y <= WIDE_SHORT_MAX_HEIGHT
 end
 
+local function restoreNativeTextScale(guiObject)
+	if not guiObject or not guiObject:IsA("GuiObject") then
+		return
+	end
+
+	local responsiveScale = guiObject:FindFirstChild(RESPONSIVE_SCALE_NAME)
+	if responsiveScale and responsiveScale:IsA("UIScale") then
+		responsiveScale.Scale = 1
+	end
+end
+
 local function applyPolish()
 	local screenGui = activeGui
 	if not screenGui or not screenGui.Parent then
@@ -70,9 +82,16 @@ local function applyPolish()
 		-- enough to overlap Concepts. Move only the utility menu down and leave all
 		-- other responsive modes under ResponsiveUILayout's control.
 		if isWideShortViewport() then
+			-- Fractional UIScale values make small Roblox text look blurry. Keep this
+			-- text-heavy menu at its native 1.0 scale and solve spacing with position.
+			restoreNativeTextScale(utilityMenu)
 			utilityMenu.AnchorPoint = Vector2.new(1, 0.5)
 			utilityMenu.Position = UDim2.new(1, -WIDE_SHORT_RIGHT_MARGIN, WIDE_SHORT_MENU_Y_SCALE, 0)
 		end
+	end
+
+	if isWideShortViewport() then
+		restoreNativeTextScale(screenGui:FindFirstChild("LuckBar"))
 	end
 
 	local questButton = utilityMenu and utilityMenu:FindFirstChild("QuestButton")
@@ -83,13 +102,13 @@ local function applyPolish()
 
 	if utilityMenu and questReady and chestReady and not utilityMenu:GetAttribute("UtilityMenuPolishLogged") then
 		utilityMenu:SetAttribute("UtilityMenuPolishLogged", true)
-		print("[UtilityMenuPolish] Applied safe badges, compact height, and wide-short spacing")
+		print("[UtilityMenuPolish] Applied safe badges, compact height, spacing, and native text scale")
 	end
 end
 
 local function schedulePolish()
 	-- ResponsiveUILayout also reacts to viewport changes. Apply immediately and
-	-- once more just after it so the wide-short spacing wins deterministically.
+	-- once more just after it so spacing and native text scale win deterministically.
 	task.defer(applyPolish)
 	task.delay(0.05, applyPolish)
 end
