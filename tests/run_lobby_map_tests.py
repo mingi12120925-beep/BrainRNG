@@ -56,7 +56,7 @@ def check_lobby_root_and_folders(builder: str) -> None:
             "folder(world, LOBBY_NAME)",
             'map:SetAttribute("Theme", "Prestige0SchoolLobby")',
             'map:SetAttribute("MapStyle", "ClassicSimulator")',
-            'map:SetAttribute("LayoutVersion", 4)',
+            'map:SetAttribute("LayoutVersion", 5)',
             'map:SetAttribute("WorldScale", WORLD_SCALE)',
             'map:SetAttribute("InteractionDistance", PROMPT_DISTANCE)',
             'map:SetAttribute("GroundStyle", "ExtendedLandscape")',
@@ -90,7 +90,7 @@ def check_required_geometry(builder: str) -> None:
         [
             "local WORLD_SCALE = 2.5",
             "local PROMPT_DISTANCE = 18",
-            '"P0_WorldTerrainMass", Vector3.new(380, 20, 400), Vector3.new(0, -10, 0)',
+            '"P0_WorldTerrainMass", Vector3.new(380, 20, 400), Vector3.new(0, -11, 0)',
             '"P0_GrassField_Core", Vector3.new(374, 1.6, 394), Vector3.new(0, -0.8, 0)',
             '"P0_OuterLand_West", Vector3.new(58, 4, 250), Vector3.new(-128, 0.6, 8)',
             '"P0_OuterLand_North", Vector3.new(246, 5.5, 72), Vector3.new(0, 1, 127)',
@@ -192,6 +192,7 @@ def check_visual_policy(builder: str) -> None:
         '"P0_SpawnArch_Left"',
         '"P0_GateSchoolPreview"',
         '"P0_MainGround"',
+        '"P0_WorldTerrainMass", Vector3.new(380, 20, 400), Vector3.new(0, -10, 0)',
     ]
     found = [needle for needle in forbidden if needle in builder]
     if found:
