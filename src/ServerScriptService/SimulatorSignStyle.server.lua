@@ -1,25 +1,25 @@
 -- ServerScriptService/SimulatorSignStyle.server.lua
--- Replaces long test-map sign text with bold physical simulator signs.
--- Project rule: no floating BillboardGui world UI. All signs stay attached to parts.
+-- Applies simple, readable physical signs whose text fits each sign's real size.
+-- Project rule: no floating BillboardGui world UI.
 
 local Workspace = game:GetService("Workspace")
 
 local MAP_NAME = "SimpleMap"
 local FIND_TIMEOUT_SECONDS = 25
-local STYLE_ATTRIBUTE = "BoldPhysicalSimulatorV1"
+local STYLE_ATTRIBUTE = "CleanAutoFitPhysicalV2"
+local PIXELS_PER_STUD = 36
 
 local COLORS = {
-	DarkPanel = Color3.fromRGB(18, 27, 43),
-	White = Color3.fromRGB(255, 255, 255),
-	SoftWhite = Color3.fromRGB(224, 234, 245),
-	Ink = Color3.fromRGB(17, 24, 39),
-	Lime = Color3.fromRGB(112, 255, 92),
-	Blue = Color3.fromRGB(92, 181, 255),
-	Yellow = Color3.fromRGB(255, 207, 64),
-	Gold = Color3.fromRGB(255, 184, 54),
-	Purple = Color3.fromRGB(174, 118, 255),
-	Pink = Color3.fromRGB(255, 122, 168),
-	Cyan = Color3.fromRGB(93, 236, 255),
+	Panel = Color3.fromRGB(244, 239, 221),
+	Ink = Color3.fromRGB(27, 38, 52),
+	MutedInk = Color3.fromRGB(82, 92, 105),
+	Blue = Color3.fromRGB(73, 132, 197),
+	Lime = Color3.fromRGB(112, 214, 92),
+	Yellow = Color3.fromRGB(235, 181, 44),
+	Gold = Color3.fromRGB(213, 145, 39),
+	Purple = Color3.fromRGB(136, 91, 213),
+	Pink = Color3.fromRGB(225, 93, 145),
+	Cyan = Color3.fromRGB(47, 168, 195),
 }
 
 local SIGN_CONFIGS = {
@@ -27,7 +27,6 @@ local SIGN_CONFIGS = {
 		PartName = "P0_RollPedestal_FixedSign",
 		Title = "BRAIN RNG",
 		Subtitle = "SCHOOL PLAZA",
-		Icon = "IQ",
 		Accent = COLORS.Lime,
 		Face = Enum.NormalId.Front,
 		Orientation = Vector3.zero,
@@ -37,9 +36,8 @@ local SIGN_CONFIGS = {
 		GuiName = "NextAreaGateSurfaceGui",
 		TitleName = "NextAreaGateTitle",
 		SubtitleName = "NextAreaGateSubtitle",
-		Title = "ELEMENTARY",
-		Subtitle = "IQ 80.500 REQUIRED",
-		Icon = "IQ",
+		Title = "ELEMENTARY SCHOOL",
+		Subtitle = "REQUIRED IQ 80.500",
 		Accent = COLORS.Blue,
 		Face = Enum.NormalId.Front,
 	},
@@ -48,8 +46,7 @@ local SIGN_CONFIGS = {
 		TitleName = "QuestBoardText",
 		SubtitleName = "QuestBoardSubtitle",
 		Title = "QUESTS",
-		Subtitle = "COMPLETE  •  CLAIM",
-		Icon = "!",
+		Subtitle = "COMPLETE AND CLAIM",
 		Accent = COLORS.Yellow,
 		Face = Enum.NormalId.Right,
 		Orientation = Vector3.zero,
@@ -59,8 +56,7 @@ local SIGN_CONFIGS = {
 		TitleName = "ChestSignText",
 		SubtitleName = "ChestSignSubtitle",
 		Title = "CHESTS",
-		Subtitle = "OPEN  •  EARN REWARDS",
-		Icon = "C",
+		Subtitle = "OPEN FOR REWARDS",
 		Accent = COLORS.Gold,
 		Face = Enum.NormalId.Left,
 		Orientation = Vector3.zero,
@@ -70,8 +66,7 @@ local SIGN_CONFIGS = {
 		TitleName = "ResearchBoardText",
 		SubtitleName = "ResearchBoardSubtitle",
 		Title = "INDEX",
-		Subtitle = "CONCEPTS  •  TITLES",
-		Icon = "?",
+		Subtitle = "CONCEPTS AND TITLES",
 		Accent = COLORS.Purple,
 		Face = Enum.NormalId.Back,
 	},
@@ -81,15 +76,13 @@ local SIGN_CONFIGS = {
 		SubtitleName = "RankingWallSubtitle",
 		Title = "LEADERBOARD",
 		Subtitle = "TOP IQ",
-		Icon = "#",
 		Accent = COLORS.Yellow,
 		Face = Enum.NormalId.Front,
 	},
 	{
 		PartName = "P0_ShopSign",
 		Title = "SHOP",
-		Subtitle = "BOOSTS  •  UPGRADES",
-		Icon = "$",
+		Subtitle = "BOOSTS AND UPGRADES",
 		Accent = COLORS.Cyan,
 		Face = Enum.NormalId.Front,
 	},
@@ -99,7 +92,6 @@ local SIGN_CONFIGS = {
 		SubtitleName = "AttendanceSubtitle",
 		Title = "DAILY REWARDS",
 		Subtitle = "COMING SOON",
-		Icon = "D",
 		Accent = COLORS.Pink,
 		Face = Enum.NormalId.Back,
 	},
@@ -107,7 +99,6 @@ local SIGN_CONFIGS = {
 		PartName = "P0_Area2ReturnFixedSign",
 		Title = "RETURN",
 		Subtitle = "BACK TO SCHOOL",
-		Icon = "<",
 		Accent = COLORS.Blue,
 		Face = Enum.NormalId.Back,
 	},
@@ -115,7 +106,6 @@ local SIGN_CONFIGS = {
 		PartName = "WinPad_Plaza_Sign",
 		Title = "+1 WIN",
 		Subtitle = "STEP ON THE PAD",
-		Icon = "+",
 		Accent = COLORS.Gold,
 		Face = Enum.NormalId.Front,
 	},
@@ -135,99 +125,62 @@ local function findDescendantWithTimeout(root, name, timeoutSeconds)
 	return nil
 end
 
-local function corner(parent, radius)
-	local item = Instance.new("UICorner")
-	item.CornerRadius = UDim.new(0, radius)
-	item.Parent = parent
-	return item
+local function darken(color, multiplier)
+	return Color3.new(
+		math.clamp(color.R * multiplier, 0, 1),
+		math.clamp(color.G * multiplier, 0, 1),
+		math.clamp(color.B * multiplier, 0, 1)
+	)
 end
 
-local function stroke(parent, color, thickness, transparency)
-	local item = Instance.new("UIStroke")
-	item.Color = color
-	item.Thickness = thickness
-	item.Transparency = transparency
-	item.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	item.Parent = parent
-	return item
+local function getSurfaceStudSize(signPart, face)
+	local size = signPart.Size
+
+	if face == Enum.NormalId.Left or face == Enum.NormalId.Right then
+		return size.Z, size.Y
+	end
+
+	if face == Enum.NormalId.Top or face == Enum.NormalId.Bottom then
+		return size.X, size.Z
+	end
+
+	return size.X, size.Y
 end
 
-local function textStroke(parent, thickness)
-	local item = Instance.new("UIStroke")
-	item.Color = Color3.fromRGB(0, 0, 0)
-	item.Thickness = thickness
-	item.Transparency = 0.2
-	item.Parent = parent
-	return item
-end
-
-local function removeOldSignGui(signPart)
+local function removePreviousStyle(signPart)
 	for _, child in ipairs(signPart:GetChildren()) do
 		if child:IsA("SurfaceGui") or child:IsA("BillboardGui") then
 			child:Destroy()
 		end
 	end
-end
 
-local function makeFramePart(parent, name, size, cframe, color)
-	local item = Instance.new("Part")
-	item.Name = name
-	item.Size = size
-	item.CFrame = cframe
-	item.Anchored = true
-	item.CanCollide = false
-	item.CanTouch = false
-	item.CanQuery = false
-	item.CastShadow = false
-	item.Material = Enum.Material.Neon
-	item.Color = color
-	item.Transparency = 0.05
-	item.TopSurface = Enum.SurfaceType.Smooth
-	item.BottomSurface = Enum.SurfaceType.Smooth
-	item.Parent = parent
-	return item
-end
-
-local function addPhysicalFrame(signPart, face, accent)
-	local oldFrame = signPart.Parent:FindFirstChild(signPart.Name .. "_BoldFrame")
-	if oldFrame then
-		oldFrame:Destroy()
-	end
-
-	local model = Instance.new("Model")
-	model.Name = signPart.Name .. "_BoldFrame"
-	model.Parent = signPart.Parent
-
-	local size = signPart.Size
-	local frameThickness
-	local frameDepth = 0.5
-
-	if face == Enum.NormalId.Front or face == Enum.NormalId.Back then
-		local width = size.X
-		local height = size.Y
-		frameThickness = math.clamp(math.min(width, height) * 0.055, 0.45, 1.2)
-		local direction = face == Enum.NormalId.Front and -1 or 1
-		local z = direction * ((size.Z * 0.5) + (frameDepth * 0.5) + 0.03)
-
-		makeFramePart(model, "Top", Vector3.new(width + frameThickness * 2, frameThickness, frameDepth), signPart.CFrame * CFrame.new(0, (height + frameThickness) * 0.5, z), accent)
-		makeFramePart(model, "Bottom", Vector3.new(width + frameThickness * 2, frameThickness, frameDepth), signPart.CFrame * CFrame.new(0, -(height + frameThickness) * 0.5, z), accent)
-		makeFramePart(model, "Left", Vector3.new(frameThickness, height, frameDepth), signPart.CFrame * CFrame.new(-(width + frameThickness) * 0.5, 0, z), accent)
-		makeFramePart(model, "Right", Vector3.new(frameThickness, height, frameDepth), signPart.CFrame * CFrame.new((width + frameThickness) * 0.5, 0, z), accent)
-	elseif face == Enum.NormalId.Left or face == Enum.NormalId.Right then
-		local width = size.Z
-		local height = size.Y
-		frameThickness = math.clamp(math.min(width, height) * 0.055, 0.45, 1.2)
-		local direction = face == Enum.NormalId.Left and -1 or 1
-		local x = direction * ((size.X * 0.5) + (frameDepth * 0.5) + 0.03)
-
-		makeFramePart(model, "Top", Vector3.new(frameDepth, frameThickness, width + frameThickness * 2), signPart.CFrame * CFrame.new(x, (height + frameThickness) * 0.5, 0), accent)
-		makeFramePart(model, "Bottom", Vector3.new(frameDepth, frameThickness, width + frameThickness * 2), signPart.CFrame * CFrame.new(x, -(height + frameThickness) * 0.5, 0), accent)
-		makeFramePart(model, "Left", Vector3.new(frameDepth, height, frameThickness), signPart.CFrame * CFrame.new(x, 0, -(width + frameThickness) * 0.5), accent)
-		makeFramePart(model, "Right", Vector3.new(frameDepth, height, frameThickness), signPart.CFrame * CFrame.new(x, 0, (width + frameThickness) * 0.5), accent)
+	local parent = signPart.Parent
+	if parent then
+		for _, suffix in ipairs({ "_BoldFrame", "_CleanFrame", "_SimulatorFrame" }) do
+			local oldFrame = parent:FindFirstChild(signPart.Name .. suffix)
+			if oldFrame then
+				oldFrame:Destroy()
+			end
+		end
 	end
 end
 
-local function createTextLabel(parent, name, text, position, size, font, color, maxTextSize)
+local function addCorner(parent, scaleRadius)
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(scaleRadius, 0)
+	corner.Parent = parent
+	return corner
+end
+
+local function addSizeConstraint(label, minSize, maxSize)
+	local constraint = Instance.new("UITextSizeConstraint")
+	constraint.MinTextSize = minSize
+	constraint.MaxTextSize = math.max(minSize, maxSize)
+	constraint.Parent = label
+	return constraint
+end
+
+local function createLabel(parent, name, text, position, size, font, color, minSize, maxSize)
 	local label = Instance.new("TextLabel")
 	label.Name = name
 	label.BackgroundTransparency = 1
@@ -236,17 +189,14 @@ local function createTextLabel(parent, name, text, position, size, font, color, 
 	label.Font = font
 	label.Text = text
 	label.TextColor3 = color
+	label.TextTransparency = 0
+	label.TextStrokeTransparency = 1
 	label.TextScaled = true
 	label.TextWrapped = false
-	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextXAlignment = Enum.TextXAlignment.Center
 	label.TextYAlignment = Enum.TextYAlignment.Center
 	label.Parent = parent
-
-	local constraint = Instance.new("UITextSizeConstraint")
-	constraint.MinTextSize = 18
-	constraint.MaxTextSize = maxTextSize
-	constraint.Parent = label
-
+	addSizeConstraint(label, minSize, maxSize)
 	return label
 end
 
@@ -259,8 +209,14 @@ local function styleSign(signPart, config)
 		signPart.Orientation = config.Orientation
 	end
 
-	removeOldSignGui(signPart)
-	signPart.Color = COLORS.DarkPanel
+	removePreviousStyle(signPart)
+
+	local surfaceWidthStuds, surfaceHeightStuds = getSurfaceStudSize(signPart, config.Face)
+	local canvasWidth = math.max(320, math.floor(surfaceWidthStuds * PIXELS_PER_STUD))
+	local canvasHeight = math.max(150, math.floor(surfaceHeightStuds * PIXELS_PER_STUD))
+	local shortSign = canvasHeight < 300
+
+	signPart.Color = darken(config.Accent, 0.72)
 	signPart.Material = Enum.Material.SmoothPlastic
 	signPart.Transparency = 0
 	signPart.Reflectance = 0
@@ -268,88 +224,64 @@ local function styleSign(signPart, config)
 	local gui = Instance.new("SurfaceGui")
 	gui.Name = config.GuiName or "SimulatorSignSurfaceGui"
 	gui.Face = config.Face
-	gui.LightInfluence = 0
+	gui.LightInfluence = 0.12
 	gui.AlwaysOnTop = false
-	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-	gui.PixelsPerStud = 48
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.FixedSize
+	gui.CanvasSize = Vector2.new(canvasWidth, canvasHeight)
 	gui.Parent = signPart
 
-	local root = Instance.new("Frame")
-	root.Name = "SignCard"
-	root.Size = UDim2.fromScale(1, 1)
-	root.BackgroundColor3 = COLORS.DarkPanel
-	root.BorderSizePixel = 0
-	root.ClipsDescendants = true
-	root.Parent = gui
-	corner(root, 28)
-	stroke(root, config.Accent, 8, 0.08)
+	local card = Instance.new("Frame")
+	card.Name = "SignCard"
+	card.Position = UDim2.fromScale(0.035, 0.065)
+	card.Size = UDim2.fromScale(0.93, 0.87)
+	card.BackgroundColor3 = COLORS.Panel
+	card.BorderSizePixel = 0
+	card.ClipsDescendants = true
+	card.Parent = gui
+	addCorner(card, 0.07)
 
 	local accentBar = Instance.new("Frame")
 	accentBar.Name = "AccentBar"
-	accentBar.Size = UDim2.new(1, 0, 0.14, 0)
+	accentBar.Position = UDim2.fromScale(0, 0)
+	accentBar.Size = UDim2.fromScale(1, shortSign and 0.11 or 0.13)
 	accentBar.BackgroundColor3 = config.Accent
 	accentBar.BorderSizePixel = 0
-	accentBar.Parent = root
+	accentBar.Parent = card
 
-	local iconCard = Instance.new("Frame")
-	iconCard.Name = "IconCard"
-	iconCard.AnchorPoint = Vector2.new(0, 0.5)
-	iconCard.Position = UDim2.new(0.035, 0, 0.57, 0)
-	iconCard.Size = UDim2.new(0.15, 0, 0.52, 0)
-	iconCard.BackgroundColor3 = config.Accent
-	iconCard.BorderSizePixel = 0
-	iconCard.Parent = root
-	corner(iconCard, 999)
+	local titleTop = shortSign and 0.17 or 0.18
+	local titleHeight = shortSign and 0.48 or 0.45
+	local subtitleTop = shortSign and 0.65 or 0.66
+	local subtitleHeight = shortSign and 0.23 or 0.20
+	local titleMax = math.floor(canvasHeight * (shortSign and 0.38 or 0.34))
+	local subtitleMax = math.floor(canvasHeight * (shortSign and 0.18 or 0.15))
 
-	local icon = Instance.new("TextLabel")
-	icon.Name = "Icon"
-	icon.BackgroundTransparency = 1
-	icon.Size = UDim2.fromScale(1, 1)
-	icon.Font = Enum.Font.GothamBlack
-	icon.Text = config.Icon
-	icon.TextColor3 = COLORS.Ink
-	icon.TextScaled = true
-	icon.Parent = iconCard
-
-	local iconConstraint = Instance.new("UITextSizeConstraint")
-	iconConstraint.MinTextSize = 18
-	iconConstraint.MaxTextSize = 74
-	iconConstraint.Parent = icon
-
-	local title = createTextLabel(
-		root,
+	createLabel(
+		card,
 		config.TitleName or "Title",
 		config.Title,
-		UDim2.new(0.22, 0, 0.18, 0),
-		UDim2.new(0.74, 0, 0.42, 0),
+		UDim2.fromScale(0.06, titleTop),
+		UDim2.fromScale(0.88, titleHeight),
 		Enum.Font.GothamBlack,
-		COLORS.White,
-		96
+		COLORS.Ink,
+		12,
+		titleMax
 	)
-	textStroke(title, 3)
 
-	local subtitle = createTextLabel(
-		root,
+	createLabel(
+		card,
 		config.SubtitleName or "Subtitle",
 		config.Subtitle,
-		UDim2.new(0.22, 0, 0.6, 0),
-		UDim2.new(0.74, 0, 0.23, 0),
+		UDim2.fromScale(0.08, subtitleTop),
+		UDim2.fromScale(0.84, subtitleHeight),
 		Enum.Font.GothamBold,
-		COLORS.SoftWhite,
-		48
+		COLORS.MutedInk,
+		10,
+		subtitleMax
 	)
 
-	addPhysicalFrame(signPart, config.Face, config.Accent)
 	signPart:SetAttribute("SimulatorSignStyle", STYLE_ATTRIBUTE)
-	return true
-end
-
-local function removeFloatingBillboard(instance)
-	if not instance:IsA("BillboardGui") then
-		return false
-	end
-
-	instance:Destroy()
+	signPart:SetAttribute("SignCanvasWidth", canvasWidth)
+	signPart:SetAttribute("SignCanvasHeight", canvasHeight)
 	return true
 end
 
@@ -372,7 +304,8 @@ local function applyToMap(map)
 
 	local removedBillboards = 0
 	for _, descendant in ipairs(map:GetDescendants()) do
-		if removeFloatingBillboard(descendant) then
+		if descendant:IsA("BillboardGui") then
+			descendant:Destroy()
 			removedBillboards += 1
 		end
 	end
@@ -389,7 +322,7 @@ local function applyToMap(map)
 
 	map:SetAttribute("SignStyle", STYLE_ATTRIBUTE)
 	print(
-		"[SimulatorSignStyle] Applied physical signs="
+		"[SimulatorSignStyle] Applied clean fitted signs="
 			.. tostring(upgraded)
 			.. " removedBillboards="
 			.. tostring(removedBillboards)
