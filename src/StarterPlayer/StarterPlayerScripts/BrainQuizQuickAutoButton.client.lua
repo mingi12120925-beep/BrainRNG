@@ -1,11 +1,9 @@
 -- StarterPlayerScripts/BrainQuizQuickAutoButton.client.lua
--- Flat, non-neon quick AUTO toggle shown near the Brain Quiz Arena.
+-- Always-visible, high-contrast quiz AUTO control.
 -- Character overhead IQ/WINS UI is intentionally untouched.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -26,69 +24,41 @@ end
 
 local button = Instance.new("TextButton")
 button.Name = "QuizAutoQuickButton"
-button.AnchorPoint = Vector2.new(0.5, 0)
-button.Position = UDim2.new(0.5, 0, 0, 58)
-button.Size = UDim2.fromOffset(168, 38)
-button.BackgroundColor3 = Color3.fromRGB(63, 128, 84)
+button.AnchorPoint = Vector2.new(0, 0)
+button.Position = UDim2.fromOffset(16, 62)
+button.Size = UDim2.fromOffset(168, 42)
+button.BackgroundColor3 = Color3.fromRGB(248, 246, 239)
 button.BorderSizePixel = 0
 button.AutoButtonColor = true
 button.Font = Enum.Font.GothamBold
-button.Text = "QUIZ AUTO: ON"
-button.TextColor3 = Color3.fromRGB(250, 250, 250)
-button.TextSize = 16
+button.Text = "QUIZ AUTO   ON"
+button.TextColor3 = Color3.fromRGB(24, 29, 35)
+button.TextSize = 18
 button.TextStrokeTransparency = 1
-button.Visible = false
-button.ZIndex = 95
+button.Visible = true
+button.ZIndex = 120
 button.Parent = brainGui
 
 local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 7)
+corner.CornerRadius = UDim.new(0, 8)
 corner.Parent = button
 
 local border = Instance.new("UIStroke")
-border.Thickness = 1
-border.Color = Color3.fromRGB(29, 34, 39)
+border.Thickness = 3
+border.Color = Color3.fromRGB(42, 126, 72)
 border.Transparency = 0
 border.Parent = button
 
 local autoEnabled = true
-local quizActive = false
 local togglePending = false
-local arena = nil
-local accumulated = 0
 
 local function updateButton()
-	button.Text = autoEnabled and "QUIZ AUTO: ON" or "QUIZ AUTO: OFF"
-	button.BackgroundColor3 = autoEnabled
-		and Color3.fromRGB(63, 128, 84)
-		or Color3.fromRGB(137, 71, 75)
-end
-
-local function findArena()
-	local map = Workspace:FindFirstChild("SimpleMap")
-	local found = map and map:FindFirstChild("BrainQuizArena")
-	if found and found:IsA("Model") then
-		arena = found
-	else
-		arena = nil
-	end
-end
-
-local function getArenaPosition()
-	if not arena or not arena.Parent then
-		findArena()
-	end
-	if not arena then
-		return nil
-	end
-	local platform = arena:FindFirstChild("ArenaPlatform")
-	if platform and platform:IsA("BasePart") then
-		return platform.Position
-	end
-	local ok, pivot = pcall(function()
-		return arena:GetPivot()
-	end)
-	return ok and pivot.Position or nil
+	button.Text = autoEnabled and "QUIZ AUTO   ON" or "QUIZ AUTO   OFF"
+	button.BackgroundColor3 = Color3.fromRGB(248, 246, 239)
+	button.TextColor3 = Color3.fromRGB(24, 29, 35)
+	border.Color = autoEnabled
+		and Color3.fromRGB(42, 126, 72)
+		or Color3.fromRGB(155, 55, 61)
 end
 
 local function hideDuplicatePanelButton()
@@ -96,6 +66,7 @@ local function hideDuplicatePanelButton()
 	local duplicate = panel and panel:FindFirstChild("AutoToggleButton")
 	if duplicate and duplicate:IsA("GuiObject") then
 		duplicate.Visible = false
+		duplicate.Active = false
 	end
 end
 
@@ -121,12 +92,6 @@ BrainQuizState.OnClientEvent:Connect(function(payload)
 		togglePending = false
 		updateButton()
 	end
-	local phase = tostring(payload.Phase or "")
-	if phase == "Active" then
-		quizActive = true
-	elseif phase == "Complete" or phase == "Expired" or phase == "Cancelled" then
-		quizActive = false
-	end
 	hideDuplicatePanelButton()
 end)
 
@@ -136,23 +101,14 @@ brainGui.DescendantAdded:Connect(function(descendant)
 	end
 end)
 
-RunService.Heartbeat:Connect(function(deltaTime)
-	accumulated += deltaTime
-	if accumulated < 0.25 then
-		return
+task.spawn(function()
+	while button.Parent do
+		button.Visible = true
+		hideDuplicatePanelButton()
+		task.wait(0.5)
 	end
-	accumulated = 0
-
-	hideDuplicatePanelButton()
-	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-	local arenaPosition = getArenaPosition()
-	local nearArena = false
-	if root and arenaPosition then
-		nearArena = (root.Position - arenaPosition).Magnitude <= 185
-	end
-	button.Visible = quizActive or nearArena
 end)
 
 updateButton()
-findArena()
-print("[BrainQuizQuickAuto] Ready nearDistance=185 overheadUIException=true flatStyle=true")
+hideDuplicatePanelButton()
+print("[BrainQuizQuickAuto] Ready alwaysVisible=true position=16,62 highContrast=true overheadUIException=true")
