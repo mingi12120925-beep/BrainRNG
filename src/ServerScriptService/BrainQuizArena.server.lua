@@ -1,6 +1,6 @@
 -- ServerScriptService/BrainQuizArena.server.lua
--- Auto-first quiz play with an ON/OFF control and optional manual answers.
--- Every correct answer awards +1 Win. All arena text-bearing parts use non-neon materials.
+-- Brain Quiz Hall: the question appears above three answer rooms.
+-- Players enter a room to answer. AUTO moves the character into the correct room.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -36,23 +36,24 @@ local BrainQuizAutoToggle = getOrCreateRemoteEvent("BrainQuizAutoToggle")
 local UpdateStats = getOrCreateRemoteEvent("UpdateStats")
 local PopupEvent = getOrCreateRemoteEvent("PopupEvent")
 
-local ARENA_NAME = "BrainQuizArena"
+local HALL_NAME = "BrainQuizHall"
 local QUESTIONS_TO_FINISH = 5
 local WIN_PER_CORRECT = 1
 local WRONG_ANSWER_PENALTY_SECONDS = 5
-local COMPLETION_COOLDOWN_SECONDS = 60
-local ANSWER_DEBOUNCE_SECONDS = 0.65
+local COMPLETION_COOLDOWN_SECONDS = 45
+local ANSWER_DEBOUNCE_SECONDS = 0.7
 local GUARANTEED_AUTO_IQ = 500
 local LOW_IQ_MIN_CHANCE = 0.15
 local LOW_IQ_MAX_CHANCE = 0.90
 local LOW_IQ_RETRY_DELAY = 8
-local AUTO_MOVE_TIMEOUT = 4
+local AUTO_MOVE_SEGMENT_TIMEOUT = 5
 
 local DIFFICULTIES = {
 	Easy = { DisplayName = "EASY", TimeLimit = 75 },
 	Normal = { DisplayName = "NORMAL", TimeLimit = 60 },
 	Hard = { DisplayName = "HARD", TimeLimit = 45 },
 }
+
 local DIFFICULTY_ORDER = { "Easy", "Normal", "Hard" }
 
 local GUARANTEED_AUTO_TIERS = {
@@ -63,28 +64,45 @@ local GUARANTEED_AUTO_TIERS = {
 }
 
 local COLORS = {
-	Platform = Color3.fromRGB(225, 232, 242),
-	PlatformTrim = Color3.fromRGB(75, 111, 170),
-	Start = Color3.fromRGB(62, 170, 105),
-	A = Color3.fromRGB(205, 82, 91),
-	B = Color3.fromRGB(63, 125, 190),
-	C = Color3.fromRGB(205, 164, 55),
-	Easy = Color3.fromRGB(70, 165, 105),
-	Normal = Color3.fromRGB(205, 164, 55),
-	Hard = Color3.fromRGB(200, 76, 85),
-	Board = Color3.fromRGB(38, 47, 61),
-	BoardText = Color3.fromRGB(245, 245, 245),
-	Post = Color3.fromRGB(92, 72, 52),
+	Ground = Color3.fromRGB(196, 201, 204),
+	Path = Color3.fromRGB(180, 184, 187),
+	Wall = Color3.fromRGB(239, 230, 207),
+	WallTrim = Color3.fromRGB(103, 124, 142),
+	Roof = Color3.fromRGB(66, 91, 114),
+	Board = Color3.fromRGB(250, 247, 237),
+	BoardBorder = Color3.fromRGB(42, 49, 58),
+	Text = Color3.fromRGB(22, 27, 33),
+	RoomA = Color3.fromRGB(166, 105, 109),
+	RoomB = Color3.fromRGB(85, 121, 153),
+	RoomC = Color3.fromRGB(172, 143, 86),
+	Easy = Color3.fromRGB(95, 141, 107),
+	Normal = Color3.fromRGB(170, 140, 83),
+	Hard = Color3.fromRGB(157, 91, 96),
 }
 
 local random = Random.new()
 local states = {}
 local saveStates = {}
-local answerPads = {}
-local installedMap = nil
 local difficultyTouchAt = {}
+local roomTriggers = {}
+local roomDoorways = {}
+local roomTargets = {}
+local installedMap = nil
 local answerQuestion
 local scheduleAutoAttempt
+
+local function enumFont(name, fallback)
+	local ok, value = pcall(function()
+		return Enum.Font[name]
+	end)
+	if ok and value then
+		return value
+	end
+	return fallback
+end
+
+local TITLE_FONT = enumFont("FredokaOne", Enum.Font.GothamBlack)
+local BODY_FONT = enumFont("BuilderSansBold", Enum.Font.GothamBold)
 
 local function firePopup(player, title, subtitle)
 	PopupEvent:FireClient(player, tostring(title) .. "|" .. tostring(subtitle), "Info")
@@ -100,32 +118,34 @@ end
 
 local function getState(player)
 	local state = states[player.UserId]
-	if not state then
-		state = {
-			Active = false,
-			Difficulty = "Normal",
-			Score = 0,
-			Attempts = 0,
-			WinsEarned = 0,
-			AutoSolvedCount = 0,
-			EndsAt = 0,
-			CooldownUntil = 0,
-			Question = nil,
-			QuestionId = 0,
-			Token = 0,
-			LastAnswerAt = 0,
-			AutoEnabled = true,
-			AutoSolveDelay = LOW_IQ_RETRY_DELAY,
-			AutoSolveAt = nil,
-			AutoSolveChance = LOW_IQ_MIN_CHANCE,
-			AutoSolveGuaranteed = false,
-			CurrentIQ = 0,
-			AutoMoving = false,
-			AutoMoveQuestionId = 0,
-			AutoMoveAnswerIndex = 0,
-		}
-		states[player.UserId] = state
+	if state then
+		return state
 	end
+
+	state = {
+		Active = false,
+		Difficulty = "Normal",
+		Score = 0,
+		Attempts = 0,
+		WinsEarned = 0,
+		AutoSolvedCount = 0,
+		EndsAt = 0,
+		CooldownUntil = 0,
+		Question = nil,
+		QuestionId = 0,
+		Token = 0,
+		LastAnswerAt = 0,
+		AutoEnabled = true,
+		AutoSolveDelay = LOW_IQ_RETRY_DELAY,
+		AutoSolveAt = nil,
+		AutoSolveChance = LOW_IQ_MIN_CHANCE,
+		AutoSolveGuaranteed = false,
+		CurrentIQ = 0,
+		AutoMoving = false,
+		AutoMoveQuestionId = 0,
+		AutoMoveAnswerIndex = 0,
+	}
+	states[player.UserId] = state
 	return state
 end
 
@@ -181,71 +201,83 @@ local function shuffle(values)
 end
 
 local function buildNumberChoices(correct, spread)
-	local choices = { correct }
+	local values = { correct }
 	local used = { [correct] = true }
 	spread = math.max(3, math.floor(tonumber(spread) or 10))
-	while #choices < 3 do
+	while #values < 3 do
 		local candidate = math.max(0, correct + random:NextInteger(-spread, spread))
 		if not used[candidate] then
 			used[candidate] = true
-			table.insert(choices, candidate)
+			table.insert(values, candidate)
 		end
 	end
-	shuffle(choices)
+	shuffle(values)
+
+	local options = {}
 	local correctIndex = 1
-	local display = {}
-	for index, value in ipairs(choices) do
-		display[index] = tostring(value)
+	for index, value in ipairs(values) do
+		options[index] = tostring(value)
 		if value == correct then
 			correctIndex = index
 		end
 	end
-	return display, correctIndex
+	return options, correctIndex
 end
 
 local function makeQuestion(promptText, correct, spread)
 	local options, correctIndex = buildNumberChoices(correct, spread)
-	return { Prompt = promptText, Options = options, CorrectIndex = correctIndex }
+	return {
+		Prompt = promptText,
+		Options = options,
+		CorrectIndex = correctIndex,
+	}
 end
 
 local function buildEasyQuestion()
 	local questionType = random:NextInteger(1, 4)
 	if questionType == 1 then
-		local a, b = random:NextInteger(1, 20), random:NextInteger(1, 15)
+		local a = random:NextInteger(1, 20)
+		local b = random:NextInteger(1, 15)
 		return makeQuestion(tostring(a) .. " + " .. tostring(b) .. " = ?", a + b, 8)
 	elseif questionType == 2 then
 		local a = random:NextInteger(10, 35)
 		local b = random:NextInteger(1, a - 1)
 		return makeQuestion(tostring(a) .. " - " .. tostring(b) .. " = ?", a - b, 8)
 	elseif questionType == 3 then
-		local a, b = random:NextInteger(1, 50), random:NextInteger(1, 50)
+		local a = random:NextInteger(1, 50)
+		local b = random:NextInteger(1, 50)
 		while b == a do
 			b = random:NextInteger(1, 50)
 		end
 		return makeQuestion("WHICH IS LARGER: " .. tostring(a) .. " OR " .. tostring(b) .. "?", math.max(a, b), 12)
+	else
+		local start = random:NextInteger(1, 12)
+		local step = random:NextInteger(1, 5)
+		return makeQuestion(
+			"NEXT: " .. tostring(start) .. ", " .. tostring(start + step) .. ", " .. tostring(start + step * 2) .. ", ?",
+			start + step * 3,
+			8
+		)
 	end
-	local start, step = random:NextInteger(1, 12), random:NextInteger(1, 5)
-	return makeQuestion(
-		"NEXT: " .. tostring(start) .. ", " .. tostring(start + step) .. ", " .. tostring(start + step * 2) .. ", ?",
-		start + step * 3,
-		8
-	)
 end
 
 local function buildNormalQuestion()
 	local questionType = random:NextInteger(1, 6)
 	if questionType == 1 then
-		local a, b = random:NextInteger(6, 35), random:NextInteger(4, 28)
+		local a = random:NextInteger(6, 35)
+		local b = random:NextInteger(4, 28)
 		return makeQuestion(tostring(a) .. " + " .. tostring(b) .. " = ?", a + b, 14)
 	elseif questionType == 2 then
 		local a = random:NextInteger(20, 60)
 		local b = random:NextInteger(4, a - 3)
 		return makeQuestion(tostring(a) .. " - " .. tostring(b) .. " = ?", a - b, 12)
 	elseif questionType == 3 then
-		local a, b = random:NextInteger(2, 12), random:NextInteger(2, 12)
+		local a = random:NextInteger(2, 12)
+		local b = random:NextInteger(2, 12)
 		return makeQuestion(tostring(a) .. " × " .. tostring(b) .. " = ?", a * b, 18)
 	elseif questionType == 4 then
-		local start, step = random:NextInteger(2, 18), random:NextInteger(2, 8)
+		local start = random:NextInteger(2, 18)
+		local step = random:NextInteger(2, 8)
 		return makeQuestion(
 			"NEXT: " .. tostring(start) .. ", " .. tostring(start + step) .. ", " .. tostring(start + step * 2) .. ", ?",
 			start + step * 3,
@@ -258,38 +290,48 @@ local function buildNormalQuestion()
 			start * 8,
 			18
 		)
+	else
+		local a = random:NextInteger(10, 70)
+		local b = random:NextInteger(10, 70)
+		while b == a do
+			b = random:NextInteger(10, 70)
+		end
+		return makeQuestion("WHICH IS LARGER: " .. tostring(a) .. " OR " .. tostring(b) .. "?", math.max(a, b), 15)
 	end
-	local a, b = random:NextInteger(10, 70), random:NextInteger(10, 70)
-	while b == a do
-		b = random:NextInteger(10, 70)
-	end
-	return makeQuestion("WHICH IS LARGER: " .. tostring(a) .. " OR " .. tostring(b) .. "?", math.max(a, b), 15)
 end
 
 local function buildHardQuestion()
 	local questionType = random:NextInteger(1, 6)
 	if questionType == 1 then
-		local a, b = random:NextInteger(35, 99), random:NextInteger(25, 89)
+		local a = random:NextInteger(35, 99)
+		local b = random:NextInteger(25, 89)
 		return makeQuestion(tostring(a) .. " + " .. tostring(b) .. " = ?", a + b, 24)
 	elseif questionType == 2 then
-		local a, b = random:NextInteger(70, 160), random:NextInteger(15, 69)
+		local a = random:NextInteger(70, 160)
+		local b = random:NextInteger(15, 69)
 		return makeQuestion(tostring(a) .. " - " .. tostring(b) .. " = ?", a - b, 22)
 	elseif questionType == 3 then
-		local a, b = random:NextInteger(6, 15), random:NextInteger(6, 15)
+		local a = random:NextInteger(6, 15)
+		local b = random:NextInteger(6, 15)
 		return makeQuestion(tostring(a) .. " × " .. tostring(b) .. " = ?", a * b, 30)
 	elseif questionType == 4 then
-		local divisor, quotient = random:NextInteger(3, 12), random:NextInteger(4, 15)
+		local divisor = random:NextInteger(3, 12)
+		local quotient = random:NextInteger(4, 15)
 		return makeQuestion(tostring(divisor * quotient) .. " ÷ " .. tostring(divisor) .. " = ?", quotient, 8)
 	elseif questionType == 5 then
-		local a, b, c = random:NextInteger(4, 12), random:NextInteger(4, 12), random:NextInteger(5, 30)
+		local a = random:NextInteger(4, 12)
+		local b = random:NextInteger(4, 12)
+		local c = random:NextInteger(5, 30)
 		return makeQuestion(tostring(a) .. " × " .. tostring(b) .. " + " .. tostring(c) .. " = ?", a * b + c, 28)
+	else
+		local start = random:NextInteger(10, 35)
+		local step = random:NextInteger(9, 18)
+		return makeQuestion(
+			"NEXT: " .. tostring(start) .. ", " .. tostring(start + step) .. ", " .. tostring(start + step * 2) .. ", ?",
+			start + step * 3,
+			20
+		)
 	end
-	local start, step = random:NextInteger(10, 35), random:NextInteger(9, 18)
-	return makeQuestion(
-		"NEXT: " .. tostring(start) .. ", " .. tostring(start + step) .. ", " .. tostring(start + step * 2) .. ", ?",
-		start + step * 3,
-		20
-	)
 end
 
 local function buildQuestion(difficultyName)
@@ -323,9 +365,11 @@ local function sendActiveState(player, state, feedback)
 	if not player.Parent or not state.Active or not state.Question then
 		return
 	end
+	local difficulty = getDifficultyConfig(state.Difficulty)
 	BrainQuizState:FireClient(player, {
 		Phase = "Active",
-		Difficulty = getDifficultyConfig(state.Difficulty).DisplayName,
+		HallName = HALL_NAME,
+		Difficulty = difficulty.DisplayName,
 		Prompt = state.Question.Prompt,
 		Options = state.Question.Options,
 		Score = state.Score,
@@ -356,12 +400,14 @@ local function queueWinsSave(player)
 	if saveState.Running then
 		return
 	end
+
 	saveState.Running = true
 	task.spawn(function()
 		while player.Parent and saveState.Pending do
 			saveState.Pending = false
 			task.wait(0.6)
-			local saved, lastError = false, nil
+			local saved = false
+			local lastError = nil
 			for attempt = 1, 2 do
 				if not player.Parent or not DataManager.IsLoaded(player) then
 					break
@@ -379,9 +425,9 @@ local function queueWinsSave(player)
 				end
 			end
 			if saved then
-				print("[BrainQuizArena] SaveOK player=" .. player.Name .. " wins=" .. tostring(GameLogic.GetWins(player)))
+				print("[BrainQuizHall] SaveOK player=" .. player.Name .. " wins=" .. tostring(GameLogic.GetWins(player)))
 			else
-				warn("[BrainQuizArena] SaveFailed player=" .. player.Name .. " error=" .. tostring(lastError))
+				warn("[BrainQuizHall] SaveFailed player=" .. player.Name .. " error=" .. tostring(lastError))
 			end
 		end
 		saveState.Running = false
@@ -392,62 +438,101 @@ local function expireRun(player, state, reason)
 	if not state.Active then
 		return
 	end
-	local score, winsEarned = state.Score, state.WinsEarned
+	local score = state.Score
+	local winsEarned = state.WinsEarned
 	local difficulty = getDifficultyConfig(state.Difficulty).DisplayName
 	state.Token += 1
 	stopAutoMovement(player, state)
 	resetActiveState(state)
 	BrainQuizState:FireClient(player, {
 		Phase = "Expired",
+		HallName = HALL_NAME,
 		Difficulty = difficulty,
 		Score = score,
 		Goal = QUESTIONS_TO_FINISH,
 		WinsEarned = winsEarned,
-		AutoEnabled = state.AutoEnabled,
 		Message = reason or "TIME UP",
+		AutoEnabled = state.AutoEnabled,
 	})
-	firePopup(player, "QUIZ ENDED", "Score " .. tostring(score) .. "/5 · +" .. tostring(winsEarned) .. " Wins kept")
-	print("[BrainQuizArena] Expired player=" .. player.Name .. " difficulty=" .. difficulty .. " score=" .. tostring(score) .. " winsEarned=" .. tostring(winsEarned))
+	firePopup(player, "QUIZ ENDED", "Score " .. tostring(score) .. "/" .. tostring(QUESTIONS_TO_FINISH) .. " · +" .. tostring(winsEarned) .. " Wins kept")
+	print("[BrainQuizHall] Expired player=" .. player.Name .. " difficulty=" .. difficulty .. " score=" .. tostring(score) .. " winsEarned=" .. tostring(winsEarned))
 end
 
 local function completeRun(player, state)
-	local attempts, autoSolvedCount, winsEarned = state.Attempts, state.AutoSolvedCount, state.WinsEarned
-	local difficultyConfig = getDifficultyConfig(state.Difficulty)
-	local elapsed = math.max(0, difficultyConfig.TimeLimit - math.max(0, state.EndsAt - Workspace:GetServerTimeNow()))
+	local attempts = state.Attempts
+	local autoSolvedCount = state.AutoSolvedCount
+	local winsEarned = state.WinsEarned
+	local difficulty = getDifficultyConfig(state.Difficulty).DisplayName
+	local timeLimit = getDifficultyConfig(state.Difficulty).TimeLimit
+	local elapsed = math.max(0, timeLimit - math.max(0, state.EndsAt - Workspace:GetServerTimeNow()))
+
 	state.Token += 1
 	stopAutoMovement(player, state)
 	resetActiveState(state)
 	state.CooldownUntil = Workspace:GetServerTimeNow() + COMPLETION_COOLDOWN_SECONDS
 	BrainQuizState:FireClient(player, {
 		Phase = "Complete",
-		Difficulty = difficultyConfig.DisplayName,
+		HallName = HALL_NAME,
+		Difficulty = difficulty,
 		WinsEarned = winsEarned,
 		Attempts = attempts,
 		AutoSolvedCount = autoSolvedCount,
-		AutoEnabled = state.AutoEnabled,
 		Elapsed = elapsed,
 		CooldownUntil = state.CooldownUntil,
+		AutoEnabled = state.AutoEnabled,
 	})
 	firePopup(player, "QUIZ COMPLETE!", "+" .. tostring(winsEarned) .. " Wins · " .. string.format("%.1fs", elapsed))
 	queueWinsSave(player)
-	print("[BrainQuizArena] Complete player=" .. player.Name .. " difficulty=" .. difficultyConfig.DisplayName .. " attempts=" .. tostring(attempts) .. " autoSolved=" .. tostring(autoSolvedCount) .. " winsEarned=" .. tostring(winsEarned) .. " totalWins=" .. tostring(GameLogic.GetWins(player)))
+	print("[BrainQuizHall] Complete player=" .. player.Name .. " difficulty=" .. difficulty .. " attempts=" .. tostring(attempts) .. " autoSolved=" .. tostring(autoSolvedCount) .. " winsEarned=" .. tostring(winsEarned) .. " totalWins=" .. tostring(GameLogic.GetWins(player)))
 end
 
 local function horizontalDistance(a, b)
-	local dx, dz = a.X - b.X, a.Z - b.Z
+	local dx = a.X - b.X
+	local dz = a.Z - b.Z
 	return math.sqrt(dx * dx + dz * dz)
 end
 
-local function movePlayerToCorrectPad(player, state, correctIndex, runToken, questionId)
-	if not state.AutoEnabled then
-		return
-	end
-	local pad = answerPads[correctIndex]
+local function moveToPoint(player, state, runToken, questionId, targetPart)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not pad or not pad.Parent or not humanoid or not root or humanoid.Health <= 0 then
-		warn("[BrainQuizArena] AutoMoveFailed player=" .. player.Name .. " reason=missing_character_or_pad")
+	if not targetPart or not targetPart.Parent or not humanoid or not root or humanoid.Health <= 0 then
+		return false
+	end
+
+	local targetPosition = Vector3.new(targetPart.Position.X, targetPart.Position.Y + 2.8, targetPart.Position.Z)
+	humanoid:MoveTo(targetPosition)
+	local deadline = os.clock() + AUTO_MOVE_SEGMENT_TIMEOUT
+	while os.clock() < deadline do
+		if not player.Parent or not state.Active or not state.AutoEnabled or state.Token ~= runToken or state.QuestionId ~= questionId then
+			return false
+		end
+		character = player.Character
+		root = character and character:FindFirstChild("HumanoidRootPart")
+		if not root then
+			return false
+		end
+		if horizontalDistance(root.Position, targetPosition) <= 4.5 then
+			return true
+		end
+		task.wait(0.1)
+	end
+
+	character = player.Character
+	root = character and character:FindFirstChild("HumanoidRootPart")
+	if not character or not root then
+		return false
+	end
+	character:PivotTo(CFrame.new(targetPosition))
+	task.wait(0.1)
+	return state.Active and state.AutoEnabled and state.Token == runToken and state.QuestionId == questionId
+end
+
+local function movePlayerToCorrectRoom(player, state, correctIndex, runToken, questionId)
+	local doorway = roomDoorways[correctIndex]
+	local target = roomTargets[correctIndex]
+	if not doorway or not target then
+		warn("[BrainQuizHall] AutoMoveFailed player=" .. player.Name .. " reason=missing_room_target")
 		return
 	end
 
@@ -455,38 +540,15 @@ local function movePlayerToCorrectPad(player, state, correctIndex, runToken, que
 	state.AutoMoveQuestionId = questionId
 	state.AutoMoveAnswerIndex = correctIndex
 	state.AutoSolveAt = nil
-	sendActiveState(player, state, "AUTO FOUND ANSWER · MOVING")
+	sendActiveState(player, state, "AUTO FOUND THE CORRECT ROOM")
 
-	local targetPosition = Vector3.new(pad.Position.X, pad.Position.Y + pad.Size.Y * 0.5 + 2.8, pad.Position.Z)
-	humanoid:MoveTo(targetPosition)
 	task.spawn(function()
-		local deadline = os.clock() + AUTO_MOVE_TIMEOUT
-		while os.clock() < deadline do
-			if not player.Parent or not state.Active or not state.AutoEnabled or state.Token ~= runToken or state.QuestionId ~= questionId then
-				return
-			end
-			character = player.Character
-			root = character and character:FindFirstChild("HumanoidRootPart")
-			if not root then
-				return
-			end
-			if horizontalDistance(root.Position, pad.Position) <= math.max(4, pad.Size.X * 0.3) then
-				break
-			end
-			task.wait(0.1)
-		end
-		if not player.Parent or not state.Active or not state.AutoEnabled or state.Token ~= runToken or state.QuestionId ~= questionId then
+		if not moveToPoint(player, state, runToken, questionId, doorway) then
 			return
 		end
-		character = player.Character
-		root = character and character:FindFirstChild("HumanoidRootPart")
-		if not character or not root then
+		if not moveToPoint(player, state, runToken, questionId, target) then
 			return
 		end
-		if horizontalDistance(root.Position, pad.Position) > math.max(5, pad.Size.X * 0.35) then
-			character:PivotTo(CFrame.new(targetPosition))
-		end
-		task.wait(0.15)
 		if state.Active and state.AutoEnabled and state.Token == runToken and state.QuestionId == questionId then
 			answerQuestion(player, correctIndex, true)
 		end
@@ -497,9 +559,11 @@ scheduleAutoAttempt = function(player, state)
 	if not state.Active or not state.Question or not state.AutoEnabled or not state.AutoSolveAt then
 		return
 	end
-	local runToken, questionId = state.Token, state.QuestionId
+	local runToken = state.Token
+	local questionId = state.QuestionId
 	local correctIndex = state.Question.CorrectIndex
 	local delaySeconds = math.max(0, state.AutoSolveAt - Workspace:GetServerTimeNow())
+
 	task.delay(delaySeconds, function()
 		if not player.Parent or not state.Active or not state.AutoEnabled or state.AutoMoving then
 			return
@@ -507,14 +571,16 @@ scheduleAutoAttempt = function(player, state)
 		if state.Token ~= runToken or state.QuestionId ~= questionId or Workspace:GetServerTimeNow() >= state.EndsAt then
 			return
 		end
+
 		local succeeded = state.AutoSolveGuaranteed or random:NextNumber() <= state.AutoSolveChance
-		print("[BrainQuizArena] AutoAttempt player=" .. player.Name .. " IQ=" .. tostring(state.CurrentIQ) .. " chance=" .. string.format("%.2f", state.AutoSolveChance) .. " guaranteed=" .. tostring(state.AutoSolveGuaranteed) .. " success=" .. tostring(succeeded))
+		print("[BrainQuizHall] AutoAttempt player=" .. player.Name .. " IQ=" .. tostring(state.CurrentIQ) .. " chance=" .. string.format("%.2f", state.AutoSolveChance) .. " guaranteed=" .. tostring(state.AutoSolveGuaranteed) .. " success=" .. tostring(succeeded))
 		if succeeded then
-			movePlayerToCorrectPad(player, state, correctIndex, runToken, questionId)
+			movePlayerToCorrectRoom(player, state, correctIndex, runToken, questionId)
 			return
 		end
+
 		state.AutoSolveAt = math.min(state.EndsAt, Workspace:GetServerTimeNow() + state.AutoSolveDelay)
-		sendActiveState(player, state, "AUTO MISSED · RETRYING")
+		sendActiveState(player, state, "AUTO MISSED · TRYING AGAIN")
 		scheduleAutoAttempt(player, state)
 	end)
 end
@@ -526,29 +592,28 @@ local function setAutoEnabled(player, enabled)
 		state.AutoSolveAt = nil
 		stopAutoMovement(player, state)
 		if state.Active then
-			sendActiveState(player, state, "AUTO OFF · MOVE MANUALLY")
+			sendActiveState(player, state, "AUTO OFF · CHOOSE A ROOM")
 		else
-			BrainQuizState:FireClient(player, { Phase = "AutoToggle", AutoEnabled = false })
+			BrainQuizState:FireClient(player, { Phase = "AutoToggle", AutoEnabled = false, HallName = HALL_NAME })
 		end
-		firePopup(player, "QUIZ AUTO: OFF", "Manual movement only")
+		firePopup(player, "QUIZ AUTO: OFF", "Choose a room manually")
 	else
 		if state.Active and state.Question then
 			prepareAutoProfile(player, state)
-			sendActiveState(player, state, "AUTO ON · NEXT TRY SCHEDULED")
+			sendActiveState(player, state, "AUTO ON · SEARCHING")
 			scheduleAutoAttempt(player, state)
 		else
-			BrainQuizState:FireClient(player, { Phase = "AutoToggle", AutoEnabled = true })
+			BrainQuizState:FireClient(player, { Phase = "AutoToggle", AutoEnabled = true, HallName = HALL_NAME })
 		end
-		firePopup(player, "QUIZ AUTO: ON", "Character movement enabled")
+		firePopup(player, "QUIZ AUTO: ON", "Character will enter the correct room")
 	end
-	print("[BrainQuizArena] AutoToggle player=" .. player.Name .. " enabled=" .. tostring(state.AutoEnabled))
+	print("[BrainQuizHall] AutoToggle player=" .. player.Name .. " enabled=" .. tostring(state.AutoEnabled))
 end
 
 BrainQuizAutoToggle.OnServerEvent:Connect(function(player, enabled)
-	if type(enabled) ~= "boolean" then
-		return
+	if type(enabled) == "boolean" then
+		setAutoEnabled(player, enabled)
 	end
-	setAutoEnabled(player, enabled)
 end)
 
 local function selectDifficulty(player, difficultyName)
@@ -562,6 +627,7 @@ local function selectDifficulty(player, difficultyName)
 		return
 	end
 	difficultyTouchAt[player.UserId] = now
+
 	local state = getState(player)
 	if state.Active then
 		firePopup(player, "QUIZ ACTIVE", "Difficulty changes next run")
@@ -570,12 +636,13 @@ local function selectDifficulty(player, difficultyName)
 	state.Difficulty = difficultyName
 	BrainQuizState:FireClient(player, {
 		Phase = "Difficulty",
+		HallName = HALL_NAME,
 		Difficulty = config.DisplayName,
 		TimeLimit = config.TimeLimit,
 		AutoEnabled = state.AutoEnabled,
 	})
 	firePopup(player, "DIFFICULTY: " .. config.DisplayName, tostring(config.TimeLimit) .. " seconds")
-	print("[BrainQuizArena] Difficulty player=" .. player.Name .. " selected=" .. config.DisplayName)
+	print("[BrainQuizHall] Difficulty player=" .. player.Name .. " selected=" .. config.DisplayName)
 end
 
 local function startRun(player)
@@ -586,16 +653,17 @@ local function startRun(player)
 	if not GameLogic.IsAlive(player) then
 		return
 	end
+
 	local state = getState(player)
 	local now = Workspace:GetServerTimeNow()
 	if state.Active then
-		firePopup(player, "QUIZ ACTIVE", state.AutoEnabled and "Auto is running; manual is faster" or "Auto is off; move manually")
 		return
 	end
 	if now < state.CooldownUntil then
 		firePopup(player, "QUIZ COOLDOWN", "Ready in " .. tostring(math.max(1, math.ceil(state.CooldownUntil - now))) .. "s")
 		return
 	end
+
 	local difficulty = getDifficultyConfig(state.Difficulty)
 	state.Token += 1
 	state.Active = true
@@ -606,19 +674,21 @@ local function startRun(player)
 	state.EndsAt = now + difficulty.TimeLimit
 	state.LastAnswerAt = 0
 	prepareQuestion(player, state)
+
 	local chancePercent = math.floor(state.AutoSolveChance * 100 + 0.5)
 	local feedback
 	if not state.AutoEnabled then
-		feedback = "AUTO OFF · MOVE MANUALLY"
+		feedback = "AUTO OFF · ENTER A ROOM"
 	elseif state.AutoSolveGuaranteed then
-		feedback = "AUTO 100% · MOVES IN " .. tostring(state.AutoSolveDelay) .. "s"
+		feedback = "AUTO 100% · MOVING IN " .. tostring(state.AutoSolveDelay) .. "s"
 	else
 		feedback = "AUTO " .. tostring(chancePercent) .. "% · MANUAL IS FASTER"
 	end
 	sendActiveState(player, state, feedback)
 	scheduleAutoAttempt(player, state)
-	firePopup(player, "BRAIN QUIZ · " .. difficulty.DisplayName, state.AutoEnabled and "Auto ON · manual movement optional" or "Auto OFF · manual movement required")
-	print("[BrainQuizArena] Start player=" .. player.Name .. " difficulty=" .. difficulty.DisplayName .. " IQ=" .. tostring(state.CurrentIQ) .. " autoEnabled=" .. tostring(state.AutoEnabled) .. " autoChance=" .. string.format("%.2f", state.AutoSolveChance) .. " guaranteed=" .. tostring(state.AutoSolveGuaranteed) .. " autoDelay=" .. tostring(state.AutoSolveDelay))
+	firePopup(player, "BRAIN QUIZ · " .. difficulty.DisplayName, "Enter the room with the correct answer")
+	print("[BrainQuizHall] Start player=" .. player.Name .. " difficulty=" .. difficulty.DisplayName .. " IQ=" .. tostring(state.CurrentIQ) .. " autoEnabled=" .. tostring(state.AutoEnabled) .. " autoChance=" .. string.format("%.2f", state.AutoSolveChance) .. " guaranteed=" .. tostring(state.AutoSolveGuaranteed) .. " autoDelay=" .. tostring(state.AutoSolveDelay))
+
 	local token = state.Token
 	task.spawn(function()
 		while player.Parent and state.Active and state.Token == token do
@@ -635,9 +705,6 @@ answerQuestion = function(player, answerIndex, autoSolved)
 	local state = getState(player)
 	local now = Workspace:GetServerTimeNow()
 	if not state.Active or not state.Question then
-		if autoSolved ~= true then
-			firePopup(player, "BRAIN QUIZ", "Step on START first")
-		end
 		return
 	end
 	if now >= state.EndsAt then
@@ -647,12 +714,14 @@ answerQuestion = function(player, answerIndex, autoSolved)
 	if now - state.LastAnswerAt < ANSWER_DEBOUNCE_SECONDS then
 		return
 	end
+
 	state.LastAnswerAt = now
 	stopAutoMovement(player, state)
 	state.Attempts += 1
 	if autoSolved == true then
 		state.AutoSolvedCount += 1
 	end
+
 	local isCorrect = answerIndex == state.Question.CorrectIndex
 	if isCorrect then
 		state.Score += 1
@@ -663,21 +732,24 @@ answerQuestion = function(player, answerIndex, autoSolved)
 	else
 		state.EndsAt -= WRONG_ANSWER_PENALTY_SECONDS
 	end
-	print("[BrainQuizArena] Answer player=" .. player.Name .. " difficulty=" .. getDifficultyConfig(state.Difficulty).DisplayName .. " correct=" .. tostring(isCorrect) .. " auto=" .. tostring(autoSolved == true) .. " score=" .. tostring(state.Score) .. " winsEarned=" .. tostring(state.WinsEarned) .. " totalWins=" .. tostring(GameLogic.GetWins(player)))
+
+	print("[BrainQuizHall] Answer player=" .. player.Name .. " room=" .. tostring(answerIndex) .. " difficulty=" .. getDifficultyConfig(state.Difficulty).DisplayName .. " correct=" .. tostring(isCorrect) .. " auto=" .. tostring(autoSolved == true) .. " score=" .. tostring(state.Score) .. " winsEarned=" .. tostring(state.WinsEarned) .. " totalWins=" .. tostring(GameLogic.GetWins(player)))
+
 	if state.Score >= QUESTIONS_TO_FINISH then
 		completeRun(player, state)
 		return
 	end
 	if Workspace:GetServerTimeNow() >= state.EndsAt then
-		expireRun(player, state, "WRONG ANSWER · TIME UP")
+		expireRun(player, state, "WRONG ROOM · TIME UP")
 		return
 	end
+
 	prepareQuestion(player, state)
 	local feedback
-	if autoSolved == true then
-		feedback = "+1 WIN · AUTO MOVED"
+	if isCorrect then
+		feedback = autoSolved == true and "+1 WIN · AUTO ENTERED" or "+1 WIN · CORRECT ROOM"
 	else
-		feedback = isCorrect and "+1 WIN · MANUAL" or ("WRONG · -" .. tostring(WRONG_ANSWER_PENALTY_SECONDS) .. "s")
+		feedback = "WRONG ROOM · -" .. tostring(WRONG_ANSWER_PENALTY_SECONDS) .. "s"
 	end
 	if not state.AutoEnabled then
 		feedback = feedback .. " · AUTO OFF"
@@ -686,50 +758,65 @@ answerQuestion = function(player, answerIndex, autoSolved)
 	scheduleAutoAttempt(player, state)
 end
 
-local function createPart(parent, name, size, position, color, material, canTouch)
-	local item = Instance.new("Part")
-	item.Name = name
-	item.Size = size
-	item.Position = position
-	item.Anchored = true
-	item.CanCollide = true
-	item.CanTouch = canTouch == true
-	item.CanQuery = true
-	item.Material = material or Enum.Material.SmoothPlastic
-	item.Color = color
-	item.TopSurface = Enum.SurfaceType.Smooth
-	item.BottomSurface = Enum.SurfaceType.Smooth
-	item.Parent = parent
-	return item
+local function createPart(parent, name, size, cframe, color, material, canCollide, canTouch, transparency)
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Size = size
+	part.CFrame = cframe
+	part.Anchored = true
+	part.CanCollide = canCollide ~= false
+	part.CanTouch = canTouch == true
+	part.CanQuery = true
+	part.Material = material or Enum.Material.SmoothPlastic
+	part.Color = color
+	part.Transparency = transparency or 0
+	part.TopSurface = Enum.SurfaceType.Smooth
+	part.BottomSurface = Enum.SurfaceType.Smooth
+	part.Parent = parent
+	return part
 end
 
-local function addText(part, face, text, textColor)
-	part.Material = part.Material == Enum.Material.Neon and Enum.Material.SmoothPlastic or part.Material
+local function addStaticText(part, face, text, font, textSizeMax)
 	local gui = Instance.new("SurfaceGui")
-	gui.Name = face.Name .. "Text"
+	gui.Name = "StaticText"
 	gui.Face = face
 	gui.LightInfluence = 1
-	gui.PixelsPerStud = 75
+	gui.PixelsPerStud = 65
+	gui.AlwaysOnTop = false
 	gui.Parent = part
+
 	local label = Instance.new("TextLabel")
 	label.Name = "Label"
 	label.BackgroundTransparency = 1
-	label.Size = UDim2.fromScale(1, 1)
+	label.Position = UDim2.fromScale(0.05, 0.08)
+	label.Size = UDim2.fromScale(0.9, 0.84)
+	label.Font = font or BODY_FONT
 	label.Text = text
-	label.TextColor3 = textColor or COLORS.BoardText
-	label.TextStrokeTransparency = 1
+	label.TextColor3 = COLORS.Text
 	label.TextScaled = true
 	label.TextWrapped = true
-	label.Font = Enum.Font.GothamBold
+	label.TextStrokeTransparency = 1
 	label.Parent = gui
+
+	local constraint = Instance.new("UITextSizeConstraint")
+	constraint.MinTextSize = 16
+	constraint.MaxTextSize = textSizeMax or 38
+	constraint.Parent = label
 end
 
-local function addTopLabel(part, text)
-	addText(part, Enum.NormalId.Top, text, Color3.fromRGB(250, 250, 250))
+local function addBoardBorder(parent, board, thickness)
+	thickness = thickness or 1
+	local size = board.Size
+	local cf = board.CFrame
+	local color = COLORS.BoardBorder
+	createPart(parent, board.Name .. "_TopBorder", Vector3.new(size.X + thickness * 2, thickness, thickness), cf * CFrame.new(0, size.Y * 0.5 + thickness * 0.5, -size.Z * 0.5 - 0.02), color, Enum.Material.SmoothPlastic, false, false)
+	createPart(parent, board.Name .. "_BottomBorder", Vector3.new(size.X + thickness * 2, thickness, thickness), cf * CFrame.new(0, -size.Y * 0.5 - thickness * 0.5, -size.Z * 0.5 - 0.02), color, Enum.Material.SmoothPlastic, false, false)
+	createPart(parent, board.Name .. "_LeftBorder", Vector3.new(thickness, size.Y, thickness), cf * CFrame.new(-size.X * 0.5 - thickness * 0.5, 0, -size.Z * 0.5 - 0.02), color, Enum.Material.SmoothPlastic, false, false)
+	createPart(parent, board.Name .. "_RightBorder", Vector3.new(thickness, size.Y, thickness), cf * CFrame.new(size.X * 0.5 + thickness * 0.5, 0, -size.Z * 0.5 - 0.02), color, Enum.Material.SmoothPlastic, false, false)
 end
 
 local function removeLegacyActivities(map)
-	for _, name in ipairs({ "KnowledgeSprint", "BrainQuizArena", "WinPad_Plaza", "WinPad_Plaza_Sign" }) do
+	for _, name in ipairs({ "KnowledgeSprint", "BrainQuizArena", "BrainQuizHall", "WinPad_Plaza", "WinPad_Plaza_Sign" }) do
 		local item = map:FindFirstChild(name)
 		if item then
 			item:Destroy()
@@ -737,86 +824,201 @@ local function removeLegacyActivities(map)
 	end
 end
 
-local function installArena(map)
+local function createAnswerRoom(hall, center, index, xOffset, accentColor)
+	local room = Instance.new("Model")
+	room.Name = "AnswerRoom_" .. tostring(index)
+	room.Parent = hall
+
+	local roomCenter = center + Vector3.new(xOffset, 0, -16)
+	local width = 24
+	local depth = 24
+	local wallHeight = 15
+	local wallThickness = 1.5
+	local doorWidth = 10
+
+	createPart(room, "Floor", Vector3.new(width, 1, depth), CFrame.new(roomCenter + Vector3.new(0, 0.5, 0)), Color3.fromRGB(215, 212, 204), Enum.Material.Concrete, true, false)
+	createPart(room, "BackWall", Vector3.new(width, wallHeight, wallThickness), CFrame.new(roomCenter + Vector3.new(0, wallHeight * 0.5, -depth * 0.5)), COLORS.Wall, Enum.Material.SmoothPlastic, true, false)
+	createPart(room, "LeftWall", Vector3.new(wallThickness, wallHeight, depth), CFrame.new(roomCenter + Vector3.new(-width * 0.5, wallHeight * 0.5, 0)), COLORS.Wall, Enum.Material.SmoothPlastic, true, false)
+	createPart(room, "RightWall", Vector3.new(wallThickness, wallHeight, depth), CFrame.new(roomCenter + Vector3.new(width * 0.5, wallHeight * 0.5, 0)), COLORS.Wall, Enum.Material.SmoothPlastic, true, false)
+
+	local frontSideWidth = (width - doorWidth) * 0.5
+	createPart(room, "FrontLeft", Vector3.new(frontSideWidth, wallHeight, wallThickness), CFrame.new(roomCenter + Vector3.new(-(doorWidth * 0.5 + frontSideWidth * 0.5), wallHeight * 0.5, depth * 0.5)), COLORS.Wall, Enum.Material.SmoothPlastic, true, false)
+	createPart(room, "FrontRight", Vector3.new(frontSideWidth, wallHeight, wallThickness), CFrame.new(roomCenter + Vector3.new(doorWidth * 0.5 + frontSideWidth * 0.5, wallHeight * 0.5, depth * 0.5)), COLORS.Wall, Enum.Material.SmoothPlastic, true, false)
+	createPart(room, "DoorTop", Vector3.new(doorWidth, 4, wallThickness), CFrame.new(roomCenter + Vector3.new(0, wallHeight - 2, depth * 0.5)), accentColor, Enum.Material.SmoothPlastic, true, false)
+	createPart(room, "Roof", Vector3.new(width + 1, 1, depth + 1), CFrame.new(roomCenter + Vector3.new(0, wallHeight + 0.5, 0)), COLORS.Roof, Enum.Material.SmoothPlastic, true, false)
+
+	local answerBoard = createPart(
+		room,
+		"AnswerBoard_" .. tostring(index),
+		Vector3.new(18, 5.5, 1),
+		CFrame.new(roomCenter + Vector3.new(0, 11, depth * 0.5 + 0.7)) * CFrame.Angles(0, math.rad(180), 0),
+		COLORS.Board,
+		Enum.Material.SmoothPlastic,
+		false,
+		false
+	)
+	addBoardBorder(room, answerBoard, 0.65)
+
+	local doorway = createPart(
+		room,
+		"RoomDoorway_" .. tostring(index),
+		Vector3.new(5, 1, 5),
+		CFrame.new(roomCenter + Vector3.new(0, 1, depth * 0.5 + 5)),
+		Color3.new(1, 1, 1),
+		Enum.Material.SmoothPlastic,
+		false,
+		false,
+		1
+	)
+	local target = createPart(
+		room,
+		"RoomTarget_" .. tostring(index),
+		Vector3.new(5, 1, 5),
+		CFrame.new(roomCenter + Vector3.new(0, 1, 1)),
+		Color3.new(1, 1, 1),
+		Enum.Material.SmoothPlastic,
+		false,
+		false,
+		1
+	)
+	local trigger = createPart(
+		room,
+		"RoomTrigger_" .. tostring(index),
+		Vector3.new(12, 8, 9),
+		CFrame.new(roomCenter + Vector3.new(0, 4, -1)),
+		Color3.new(1, 1, 1),
+		Enum.Material.SmoothPlastic,
+		false,
+		true,
+		1
+	)
+
+	roomDoorways[index] = doorway
+	roomTargets[index] = target
+	roomTriggers[index] = trigger
+
+	trigger.Touched:Connect(function(hit)
+		local player = getPlayerFromHit(hit)
+		if not player then
+			return
+		end
+		local state = getState(player)
+		local autoMoved = state.Active
+			and state.AutoMoving
+			and state.AutoMoveQuestionId == state.QuestionId
+			and state.AutoMoveAnswerIndex == index
+		answerQuestion(player, index, autoMoved)
+	end)
+end
+
+local function installHall(map)
 	if installedMap == map or not map or map.Parent ~= Workspace or Workspace:FindFirstChild("SimpleMap") ~= map then
 		return
 	end
+
 	removeLegacyActivities(map)
-	table.clear(answerPads)
+	table.clear(roomTriggers)
+	table.clear(roomDoorways)
+	table.clear(roomTargets)
+
 	local scale = tonumber(map:GetAttribute("WorldScale")) or 2.5
-	local center = Vector3.new(48 * scale, 0, -34 * scale)
-	local arena = Instance.new("Model")
-	arena.Name = ARENA_NAME
-	arena:SetAttribute("QuestionsToFinish", QUESTIONS_TO_FINISH)
-	arena:SetAttribute("WinPerCorrect", WIN_PER_CORRECT)
-	arena:SetAttribute("DefaultDifficulty", "Normal")
-	arena:SetAttribute("AutoDefault", true)
-	arena:SetAttribute("AutoGuaranteedIQ", GUARANTEED_AUTO_IQ)
-	arena:SetAttribute("NoNeonTextOrSigns", true)
-	arena.Parent = map
+	local center = Vector3.new(72 * scale, 0, -66 * scale)
 
-	local platform = createPart(arena, "ArenaPlatform", Vector3.new(38 * scale, 1, 38 * scale), center + Vector3.new(0, 0.5, 0), COLORS.Platform, Enum.Material.Concrete, false)
-	platform.CanTouch = false
-	local trim = createPart(arena, "ArenaTrim", Vector3.new(39 * scale, 0.3, 39 * scale), center + Vector3.new(0, 1.05, 0), COLORS.PlatformTrim, Enum.Material.SmoothPlastic, false)
-	trim.CanCollide = false
-	trim.CanTouch = false
+	local hall = Instance.new("Model")
+	hall.Name = HALL_NAME
+	hall:SetAttribute("QuestionsToFinish", QUESTIONS_TO_FINISH)
+	hall:SetAttribute("WinPerCorrect", WIN_PER_CORRECT)
+	hall:SetAttribute("DefaultDifficulty", "Normal")
+	hall:SetAttribute("AutoDefault", true)
+	hall:SetAttribute("AutoGuaranteedIQ", GUARANTEED_AUTO_IQ)
+	hall:SetAttribute("RoomAnswerMode", true)
+	hall:SetAttribute("NoNeon", true)
+	hall.Parent = map
 
-	local padSize = Vector3.new(7 * scale, 0.8, 7 * scale)
-	local padY = 1.55
-	local answerOffsets = { -10 * scale, 0, 10 * scale }
-	local answerColors = { COLORS.A, COLORS.B, COLORS.C }
-	local answerNames = { "A", "B", "C" }
-	for index = 1, 3 do
-		local pad = createPart(arena, "AnswerPad_" .. answerNames[index], padSize, Vector3.new(center.X + answerOffsets[index], padY, center.Z + 3 * scale), answerColors[index], Enum.Material.SmoothPlastic, true)
-		answerPads[index] = pad
-		addTopLabel(pad, answerNames[index])
-		pad.Touched:Connect(function(hit)
-			local player = getPlayerFromHit(hit)
-			if player then
-				local state = getState(player)
-				local autoMoved = state.Active and state.AutoMoving and state.AutoMoveQuestionId == state.QuestionId and state.AutoMoveAnswerIndex == index
-				answerQuestion(player, index, autoMoved)
-			end
-		end)
-	end
+	createPart(hall, "HallCourtyard", Vector3.new(104, 1, 76), CFrame.new(center + Vector3.new(0, 0.5, 0)), COLORS.Ground, Enum.Material.Concrete, true, false)
+	createPart(hall, "HallTrim", Vector3.new(106, 0.35, 78), CFrame.new(center + Vector3.new(0, 1.05, 0)), COLORS.WallTrim, Enum.Material.SmoothPlastic, false, false)
 
-	local startPad = createPart(arena, "QuizStartPad", Vector3.new(12 * scale, 0.8, 5 * scale), Vector3.new(center.X, padY, center.Z - 5 * scale), COLORS.Start, Enum.Material.SmoothPlastic, true)
-	addTopLabel(startPad, "START\nAUTO DEFAULT ON")
-	startPad.Touched:Connect(function(hit)
+	createPart(hall, "PathToHall_A", Vector3.new(58, 0.7, 18), CFrame.new(center + Vector3.new(-77, 0.35, 28)), COLORS.Path, Enum.Material.Concrete, true, false)
+	createPart(hall, "PathToHall_B", Vector3.new(18, 0.7, 54), CFrame.new(center + Vector3.new(-48, 0.35, 10)), COLORS.Path, Enum.Material.Concrete, true, false)
+
+	local entranceArch = createPart(hall, "EntranceHeader", Vector3.new(42, 8, 2), CFrame.new(center + Vector3.new(0, 11, 31)) * CFrame.Angles(0, math.rad(180), 0), COLORS.Board, Enum.Material.SmoothPlastic, false, false)
+	addStaticText(entranceArch, Enum.NormalId.Front, "BRAIN QUIZ HALL", TITLE_FONT, 42)
+	addBoardBorder(hall, entranceArch, 0.7)
+	createPart(hall, "EntrancePostLeft", Vector3.new(2, 16, 2), CFrame.new(center + Vector3.new(-20, 8, 31)), COLORS.WallTrim, Enum.Material.SmoothPlastic, true, false)
+	createPart(hall, "EntrancePostRight", Vector3.new(2, 16, 2), CFrame.new(center + Vector3.new(20, 8, 31)), COLORS.WallTrim, Enum.Material.SmoothPlastic, true, false)
+
+	local startTrigger = createPart(hall, "HallStartTrigger", Vector3.new(32, 9, 10), CFrame.new(center + Vector3.new(0, 4.5, 23)), Color3.new(1, 1, 1), Enum.Material.SmoothPlastic, false, true, 1)
+	startTrigger.Touched:Connect(function(hit)
 		local player = getPlayerFromHit(hit)
 		if player then
 			startRun(player)
 		end
 	end)
 
-	local difficultyXOffsets = { -10 * scale, 0, 10 * scale }
+	local problemBoard = createPart(
+		hall,
+		"QuestionBoard",
+		Vector3.new(82, 11, 1.2),
+		CFrame.new(center + Vector3.new(0, 22, -2)) * CFrame.Angles(0, math.rad(180), 0),
+		COLORS.Board,
+		Enum.Material.SmoothPlastic,
+		false,
+		false
+	)
+	addBoardBorder(hall, problemBoard, 0.8)
+
+	createAnswerRoom(hall, center, 1, -30, COLORS.RoomA)
+	createAnswerRoom(hall, center, 2, 0, COLORS.RoomB)
+	createAnswerRoom(hall, center, 3, 30, COLORS.RoomC)
+
+	local deskZ = center.Z + 19
+	local deskOffsets = { -24, 0, 24 }
 	for index, difficultyName in ipairs(DIFFICULTY_ORDER) do
 		local config = DIFFICULTIES[difficultyName]
-		local pad = createPart(arena, "DifficultyPad_" .. difficultyName, Vector3.new(6 * scale, 0.65, 4.5 * scale), Vector3.new(center.X + difficultyXOffsets[index], 1.48, center.Z - 13 * scale), COLORS[difficultyName], Enum.Material.SmoothPlastic, true)
-		addTopLabel(pad, config.DisplayName .. "\n" .. tostring(config.TimeLimit) .. "s")
-		pad.Touched:Connect(function(hit)
+		local desk = createPart(
+			hall,
+			"DifficultyDesk_" .. difficultyName,
+			Vector3.new(16, 4, 7),
+			CFrame.new(Vector3.new(center.X + deskOffsets[index], 2, deskZ)),
+			COLORS[difficultyName],
+			Enum.Material.SmoothPlastic,
+			true,
+			false
+		)
+		local top = createPart(
+			hall,
+			"DifficultyTop_" .. difficultyName,
+			Vector3.new(17, 1, 8),
+			CFrame.new(Vector3.new(center.X + deskOffsets[index], 4.5, deskZ)),
+			COLORS.Board,
+			Enum.Material.SmoothPlastic,
+			true,
+			false
+		)
+		addStaticText(top, Enum.NormalId.Top, config.DisplayName .. "\n" .. tostring(config.TimeLimit) .. " SEC", BODY_FONT, 30)
+		local trigger = createPart(
+			hall,
+			"DifficultyTrigger_" .. difficultyName,
+			Vector3.new(17, 6, 9),
+			CFrame.new(Vector3.new(center.X + deskOffsets[index], 3, deskZ)),
+			Color3.new(1, 1, 1),
+			Enum.Material.SmoothPlastic,
+			false,
+			true,
+			1
+		)
+		trigger.Touched:Connect(function(hit)
 			local player = getPlayerFromHit(hit)
 			if player then
 				selectDifficulty(player, difficultyName)
 			end
 		end)
-	end
-
-	local boardPosition = Vector3.new(center.X, 11.5, center.Z + 16 * scale)
-	local board = createPart(arena, "QuizRulesBoard", Vector3.new(31 * scale, 14, 1.4), boardPosition, COLORS.Board, Enum.Material.SmoothPlastic, false)
-	board.CanCollide = false
-	board.CanQuery = false
-	addText(board, Enum.NormalId.Front, "BRAIN QUIZ ARENA\nAUTO BUTTON IN QUIZ PANEL\nIQ 500+ = 100%\nLOW IQ = CHANCE\nEVERY CORRECT = +1 WIN", COLORS.BoardText)
-	addText(board, Enum.NormalId.Back, "CHOOSE DIFFICULTY\nSTEP ON START\nAUTO MOVES TO ANSWER\nMANUAL PLAY IS OPTIONAL", COLORS.BoardText)
-	for _, xOffset in ipairs({ -14 * scale, 14 * scale }) do
-		local post = createPart(arena, "BoardPost_" .. tostring(xOffset), Vector3.new(1.2, 20, 1.2), Vector3.new(center.X + xOffset, 5, boardPosition.Z), COLORS.Post, Enum.Material.Wood, false)
-		post.CanCollide = false
-		post.CanQuery = false
+		desk:SetAttribute("Difficulty", difficultyName)
 	end
 
 	installedMap = map
-	map:SetAttribute("BrainQuizArenaInstalled", true)
-	print("[BrainQuizArena] Installed goal=5 winPerCorrect=1 autoDefault=true autoButton=true guaranteedIQ=500 noNeonTextOrSigns=true difficulties=Easy75/Normal60/Hard45")
+	map:SetAttribute("BrainQuizHallInstalled", true)
+	print("[BrainQuizHall] Installed mode=threeRooms location=rightRear rooms=3 autoMovesIntoRoom=true winPerCorrect=1 noNeon=true")
 end
 
 local function scheduleInstall(map)
@@ -824,8 +1026,8 @@ local function scheduleInstall(map)
 		return
 	end
 	task.spawn(function()
-		task.wait(0.9)
-		installArena(map)
+		task.wait(1)
+		installHall(map)
 	end)
 end
 
@@ -847,7 +1049,7 @@ local function bindPlayer(player)
 		if state and state.Active then
 			state.Token += 1
 			resetActiveState(state)
-			BrainQuizState:FireClient(player, { Phase = "Cancelled", AutoEnabled = state.AutoEnabled })
+			BrainQuizState:FireClient(player, { Phase = "Cancelled", HallName = HALL_NAME, AutoEnabled = state.AutoEnabled })
 		end
 	end)
 end
