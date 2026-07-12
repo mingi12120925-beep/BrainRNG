@@ -29,6 +29,8 @@ end
 local latestStats = {}
 local sessionStartedAt = nil
 local sessionStartSource = nil
+local playerDataReadyReceived = false
+local statsReceived = false
 local rollCount = 0
 local firstRollInputAt = nil
 local firstRollSuccessAt = nil
@@ -133,7 +135,7 @@ local function scheduleSnapshots()
 end
 
 local function startSession(source)
-	if sessionStartedAt then
+	if sessionStartedAt or not statsReceived then
 		return
 	end
 
@@ -253,19 +255,23 @@ end
 
 UpdateStats.OnClientEvent:Connect(function(newStats)
 	mergeStats(newStats)
+	statsReceived = true
 	if not sessionStartedAt then
-		startSession("UpdateStats")
+		startSession(playerDataReadyReceived and "PlayerDataReady+UpdateStats" or "UpdateStats")
 	end
 	checkIQThresholds()
 end)
 
 PlayerDataReady.OnClientEvent:Connect(function()
-	startSession("PlayerDataReady")
+	playerDataReadyReceived = true
+	if statsReceived and not sessionStartedAt then
+		startSession("UpdateStats+PlayerDataReady")
+	end
 end)
 
 PopupEvent.OnClientEvent:Connect(function(text, popupType)
-	if not sessionStartedAt then
-		startSession("PopupEvent")
+	if not sessionStartedAt and statsReceived then
+		startSession("UpdateStats+PopupEvent")
 	end
 
 	popupType = tostring(popupType or "Info")
