@@ -155,7 +155,7 @@ local function connectPlayer(player)
 	end)
 
 	if player.Character then
-		task.spawn(guardCharacter, player.Character)
+		task.spawn(guardCharacter, player, player.Character)
 	end
 end
 
