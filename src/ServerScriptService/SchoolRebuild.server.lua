@@ -11,7 +11,10 @@ local FIND_TIMEOUT_SECONDS = 25
 local LEGACY_SETTLE_TIMEOUT_SECONDS = 4
 local WORLD_SCALE = 2.5
 local BUILD_NAME = "P0_SchoolBuilding_Rebuilt"
-local BUILD_VERSION = "ScratchRebuildV3_CorrectNestedPath"
+local BUILD_VERSION = "ScratchRebuildV4_AtomicSinglePass"
+local ATTACHED_ATTRIBUTE = "SchoolRebuildAttachedV4"
+local IN_PROGRESS_ATTRIBUTE = "SchoolRebuildInProgressV4"
+local COMPLETE_ATTRIBUTE = "SchoolStableBuildCompleteV4"
 
 local COLORS = {
 	Brick = Color3.fromRGB(202, 94, 74),
@@ -96,12 +99,12 @@ local function configureDoor(door)
 end
 
 local function connectDoorGuard(door)
-	if door:GetAttribute("StableSchoolDoorGuardV3") then
+	if door:GetAttribute("StableSchoolDoorGuardV4") then
 		configureDoor(door)
 		return
 	end
 
-	door:SetAttribute("StableSchoolDoorGuardV3", true)
+	door:SetAttribute("StableSchoolDoorGuardV4", true)
 	for _, propertyName in ipairs({
 		"Size",
 		"Position",
@@ -306,46 +309,66 @@ local function waitForLegacyPasses(map)
 end
 
 local function rebuildOnce(map)
-	if not map or not map.Parent or map:GetAttribute("SchoolStableBuildCompleteV3") then
+	if not map or not map.Parent then
+		return
+	end
+	if map:GetAttribute(COMPLETE_ATTRIBUTE) or map:GetAttribute(IN_PROGRESS_ATTRIBUTE) then
 		return
 	end
 
-	local gateArea, gateModel, door, signPart = waitForDependencies(map)
-	if not gateArea or not gateModel or not door or not signPart then
-		warn("[SchoolRebuild] Required nested gate objects missing; rebuild skipped.")
-		return
+	-- Acquire before the first yield. Workspace.ChildAdded and WaitForChild can both
+	-- call attach for the same map during creation; only the first coroutine may continue.
+	map:SetAttribute(IN_PROGRESS_ATTRIBUTE, true)
+
+	local success, failure = xpcall(function()
+		local gateArea, gateModel, door, signPart = waitForDependencies(map)
+		if not gateArea or not gateModel or not door or not signPart then
+			error("Required nested gate objects missing")
+		end
+
+		waitForLegacyPasses(map)
+
+		local removedOldParts = 0
+		for _, child in ipairs(gateArea:GetChildren()) do
+			child:Destroy()
+			removedOldParts += 1
+		end
+
+		local legacyRemoved = removeLegacyGateVisuals(gateModel, door, signPart)
+		local archRemoved = removeAllByName(map, "SchoolPortalArch")
+		local build = buildSchool(gateArea)
+		connectDoorGuard(door)
+		local signReady = configureSign(signPart)
+
+		map:SetAttribute(COMPLETE_ATTRIBUTE, true)
+		map:SetAttribute("SchoolBuildVersion", BUILD_VERSION)
+		map:SetAttribute("SchoolOldPartsRemoved", removedOldParts + legacyRemoved + archRemoved)
+		print(
+			"[SchoolRebuild] atomicSinglePass=true rebuilt="
+				.. tostring(build ~= nil)
+				.. " removedOldParts="
+				.. tostring(removedOldParts + legacyRemoved + archRemoved)
+				.. " preservedPrompt="
+				.. tostring(door:FindFirstChildOfClass("ProximityPrompt") ~= nil)
+				.. " signReady="
+				.. tostring(signReady)
+		)
+	end, debug.traceback)
+
+	map:SetAttribute(IN_PROGRESS_ATTRIBUTE, false)
+	if not success then
+		warn("[SchoolRebuild] Failed: " .. tostring(failure))
 	end
-
-	waitForLegacyPasses(map)
-
-	local removedOldParts = 0
-	for _, child in ipairs(gateArea:GetChildren()) do
-		child:Destroy()
-		removedOldParts += 1
-	end
-
-	local legacyRemoved = removeLegacyGateVisuals(gateModel, door, signPart)
-	local archRemoved = removeAllByName(map, "SchoolPortalArch")
-	local build = buildSchool(gateArea)
-	connectDoorGuard(door)
-	local signReady = configureSign(signPart)
-
-	map:SetAttribute("SchoolStableBuildCompleteV3", true)
-	map:SetAttribute("SchoolBuildVersion", BUILD_VERSION)
-	map:SetAttribute("SchoolOldPartsRemoved", removedOldParts + legacyRemoved + archRemoved)
-	print(
-		"[SchoolRebuild] nestedPath=true stableSinglePass=true rebuilt="
-			.. tostring(build ~= nil)
-			.. " removedOldParts="
-			.. tostring(removedOldParts + legacyRemoved + archRemoved)
-			.. " preservedPrompt="
-			.. tostring(door:FindFirstChildOfClass("ProximityPrompt") ~= nil)
-			.. " signReady="
-			.. tostring(signReady)
-	)
 end
 
 local function attach(map)
+	if not map or not map.Parent or map:GetAttribute(ATTACHED_ATTRIBUTE) then
+		return
+	end
+
+	-- Acquire immediately so ChildAdded and WaitForChild cannot install two listeners
+	-- or spawn two rebuild coroutines for the same map.
+	map:SetAttribute(ATTACHED_ATTRIBUTE, true)
 	map.DescendantAdded:Connect(function(descendant)
 		if descendant.Name == "SchoolPortalArch" then
 			task.defer(function()
