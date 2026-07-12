@@ -136,6 +136,7 @@ local function createFixedSign(parent, name, position, text, accentColor)
 		Enum.Material.Wood,
 		false
 	)
+	post.CanCollide = false
 	post.CanQuery = false
 
 	local board = createPart(
@@ -147,19 +148,20 @@ local function createFixedSign(parent, name, position, text, accentColor)
 		Enum.Material.SmoothPlastic,
 		false
 	)
+	board.CanCollide = false
 	board.CanQuery = false
 
-	local trim = createPart(
+	local header = createPart(
 		parent,
-		name .. "_Trim",
-		Vector3.new(21, 8, 0.35),
-		position + Vector3.new(0, 10, 0.72),
+		name .. "_Header",
+		Vector3.new(20, 0.8, 1.3),
+		position + Vector3.new(0, 13.3, 0),
 		accentColor,
 		Enum.Material.Neon,
 		false
 	)
-	trim.CanCollide = false
-	trim.CanQuery = false
+	header.CanCollide = false
+	header.CanQuery = false
 
 	addSurfaceText(board, text)
 end
