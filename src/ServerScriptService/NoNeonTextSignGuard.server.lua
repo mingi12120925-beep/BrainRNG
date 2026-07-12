@@ -1,5 +1,6 @@
 -- ServerScriptService/NoNeonTextSignGuard.server.lua
--- Permanent visual policy: world text and sign-like objects may never use Neon or glow lights.
+-- Permanent visual policy: sign-like world parts may not use Neon or glow lights.
+-- Text fonts, outlines, colors, ScreenGui, and character overhead UI are intentionally untouched.
 
 local Workspace = game:GetService("Workspace")
 
@@ -13,11 +14,9 @@ local SIGN_WORDS = {
 	"poster",
 	"notice",
 	"display",
-	"billboard",
 }
 
 local changedMaterials = 0
-local changedText = 0
 local disabledLights = 0
 
 local function nameLooksLikeSign(instance)
@@ -30,13 +29,9 @@ local function nameLooksLikeSign(instance)
 	return false
 end
 
-local function hasWorldText(instance)
+local function hasSurfaceText(instance)
 	for _, descendant in ipairs(instance:GetDescendants()) do
-		if descendant:IsA("SurfaceGui")
-			or descendant:IsA("BillboardGui")
-			or descendant:IsA("TextLabel")
-			or descendant:IsA("TextButton")
-			or descendant:IsA("TextBox") then
+		if descendant:IsA("SurfaceGui") then
 			return true
 		end
 	end
@@ -54,18 +49,6 @@ local function nearestBasePart(instance)
 	return nil
 end
 
-local function flattenWorldText(textObject)
-	if textObject:IsA("TextLabel") or textObject:IsA("TextButton") or textObject:IsA("TextBox") then
-		textObject.TextStrokeTransparency = 1
-		if textObject:IsA("TextButton") or nameLooksLikeSign(textObject) then
-			textObject.Font = Enum.Font.GothamBold
-		else
-			textObject.Font = Enum.Font.GothamMedium
-		end
-		changedText += 1
-	end
-end
-
 local function removeSignLighting(part)
 	for _, descendant in ipairs(part:GetDescendants()) do
 		if descendant:IsA("PointLight") or descendant:IsA("SurfaceLight") or descendant:IsA("SpotLight") then
@@ -77,36 +60,27 @@ local function removeSignLighting(part)
 	end
 end
 
+local function enforcePart(part)
+	if not part or not part:IsA("BasePart") then
+		return
+	end
+	local signLike = nameLooksLikeSign(part) or hasSurfaceText(part)
+	if not signLike then
+		return
+	end
+	if part.Material == Enum.Material.Neon then
+		part.Material = Enum.Material.SmoothPlastic
+		changedMaterials += 1
+	end
+	removeSignLighting(part)
+end
+
 local function enforce(instance)
-	if instance:IsA("SurfaceGui") then
-		instance.LightInfluence = 1
+	if instance:IsA("BasePart") then
+		enforcePart(instance)
+	elseif instance:IsA("SurfaceGui") then
 		local part = nearestBasePart(instance)
-		if part and part.Material == Enum.Material.Neon then
-			part.Material = Enum.Material.SmoothPlastic
-			changedMaterials += 1
-		end
-	elseif instance:IsA("BillboardGui") then
-		local part = nearestBasePart(instance)
-		if part and part.Material == Enum.Material.Neon then
-			part.Material = Enum.Material.SmoothPlastic
-			changedMaterials += 1
-		end
-	elseif instance:IsA("TextLabel") or instance:IsA("TextButton") or instance:IsA("TextBox") then
-		flattenWorldText(instance)
-		local part = nearestBasePart(instance)
-		if part and part.Material == Enum.Material.Neon then
-			part.Material = Enum.Material.SmoothPlastic
-			changedMaterials += 1
-		end
-	elseif instance:IsA("BasePart") then
-		local signLike = nameLooksLikeSign(instance) or hasWorldText(instance)
-		if signLike then
-			if instance.Material == Enum.Material.Neon then
-				instance.Material = Enum.Material.SmoothPlastic
-				changedMaterials += 1
-			end
-			removeSignLighting(instance)
-		end
+		enforcePart(part)
 	end
 end
 
@@ -116,19 +90,18 @@ end
 
 Workspace.DescendantAdded:Connect(function(descendant)
 	task.defer(function()
-		if descendant.Parent then
-			enforce(descendant)
-			local part = nearestBasePart(descendant)
-			if part then
-				enforce(part)
-			end
+		if not descendant.Parent then
+			return
 		end
+		enforce(descendant)
+		local part = nearestBasePart(descendant)
+		enforcePart(part)
 	end)
 end)
 
 print(
-	"[NoNeonTextSignGuard] Ready policy=worldTextAndSigns"
+	"[NoNeonTextSignGuard] Ready policy=materialsAndLightsOnly"
 		.. " changedMaterials=" .. tostring(changedMaterials)
-		.. " changedText=" .. tostring(changedText)
 		.. " disabledLights=" .. tostring(disabledLights)
+		.. " overheadUIException=true"
 )
