@@ -168,7 +168,7 @@ local function getBrainSurgeStats(player)
 	}
 end
 
-local BASIC_CHEST_COST = 25
+local BASIC_CHEST_COST = 150
 local BASIC_CHEST_REWARDS = {
 	{ Weight = 50, Type = "IQ", Amount = 500, Text = "+500 IQ" },
 	{ Weight = 30, Type = "KP", Amount = 100, Text = "+100 KP" },
@@ -179,9 +179,9 @@ local BASIC_CHEST_REWARDS = {
 local QUEST_DEFINITIONS = {
 	{
 		Id = "Roll_50",
-		Title = "Roll 50 Times",
-		Description = "Roll 50 times.",
-		Goal = 50,
+		Title = "Roll 120 Times",
+		Description = "Roll 120 times.",
+		Goal = 120,
 		Reward = { Type = "KP", Amount = 100 },
 		RewardText = "+100 KP",
 	},
@@ -195,9 +195,9 @@ local QUEST_DEFINITIONS = {
 	},
 	{
 		Id = "Discover_3",
-		Title = "Discover 3 Concepts",
-		Description = "Discover 3 new Concepts.",
-		Goal = 3,
+		Title = "Discover 120 Concepts",
+		Description = "Discover 120 new Concepts.",
+		Goal = 120,
 		Reward = { Type = "KP", Amount = 250 },
 		RewardText = "+250 KP",
 	},
