@@ -126,7 +126,7 @@ local function scheduleHide(delaySeconds)
 	end)
 end
 
-local function showResult(titleText, questionText, feedbackText, strokeColor)
+local function showResult(titleText, questionText, feedbackText, strokeColor, duration)
 	hideToken += 1
 	activePayload = nil
 	panel.Visible = true
@@ -135,7 +135,7 @@ local function showResult(titleText, questionText, feedbackText, strokeColor)
 	choices.Text = ""
 	feedback.Text = feedbackText or ""
 	stroke.Color = strokeColor
-	scheduleHide(3.5)
+	scheduleHide(duration or 3.5)
 end
 
 local function renderActive(payload)
@@ -151,12 +151,15 @@ local function renderActive(payload)
 		.. "      B  " .. tostring(options[2] or "?")
 		.. "      C  " .. tostring(options[3] or "?")
 
+	local winsEarned = tonumber(payload.WinsEarned) or 0
 	local autoDelay = tonumber(payload.AutoSolveDelay)
 	if autoDelay then
-		feedback.Text = activePayload.BaseFeedback .. " · AUTO " .. tostring(autoDelay) .. "s"
+		feedback.Text = activePayload.BaseFeedback
+			.. " · +" .. tostring(winsEarned) .. " WINS · AUTO " .. tostring(autoDelay) .. "s"
 	else
 		local requiredIQ = tonumber(payload.AutoSolveRequiredIQ) or 500
-		feedback.Text = activePayload.BaseFeedback .. " · SMART SOLVE AT " .. tostring(requiredIQ) .. " IQ"
+		feedback.Text = activePayload.BaseFeedback
+			.. " · +" .. tostring(winsEarned) .. " WINS · AUTO AT " .. tostring(requiredIQ) .. " IQ"
 	end
 end
 
@@ -168,30 +171,31 @@ BrainQuizState.OnClientEvent:Connect(function(payload)
 	local phase = tostring(payload.Phase or "")
 	if phase == "Active" then
 		renderActive(payload)
-	elseif phase == "Complete" then
-		local reward = tonumber(payload.RewardWins) or 0
-		local perfect = payload.Perfect == true
-		local autoSolvedCount = tonumber(payload.AutoSolvedCount) or 0
-		local titleText
-		if perfect then
-			titleText = "MANUAL PERFECT!"
-		elseif autoSolvedCount > 0 then
-			titleText = "SMART SOLVE COMPLETE!"
-		else
-			titleText = "QUIZ COMPLETE!"
-		end
+	elseif phase == "Difficulty" then
 		showResult(
-			titleText,
-			"+" .. tostring(reward) .. " WINS",
-			"Return after the cooldown to play again",
-			Color3.fromRGB(80, 225, 135)
+			"DIFFICULTY SELECTED",
+			tostring(payload.Difficulty or "NORMAL"),
+			tostring(payload.TimeLimit or 60) .. " SECONDS · +1 WIN PER CORRECT",
+			Color3.fromRGB(255, 205, 70),
+			2.5
+		)
+	elseif phase == "Complete" then
+		local winsEarned = tonumber(payload.WinsEarned) or 0
+		showResult(
+			"QUIZ COMPLETE · " .. tostring(payload.Difficulty or "NORMAL"),
+			"+" .. tostring(winsEarned) .. " WINS",
+			"Every correct answer was rewarded",
+			Color3.fromRGB(80, 225, 135),
+			4
 		)
 	elseif phase == "Expired" then
+		local winsEarned = tonumber(payload.WinsEarned) or 0
 		showResult(
-			"TIME UP",
+			"TIME UP · " .. tostring(payload.Difficulty or "NORMAL"),
 			"SCORE " .. tostring(payload.Score or 0) .. "/" .. tostring(payload.Goal or 5),
-			"Step on START to retry",
-			Color3.fromRGB(255, 105, 105)
+			"+" .. tostring(winsEarned) .. " WINS KEPT",
+			Color3.fromRGB(255, 105, 105),
+			4
 		)
 	elseif phase == "Cancelled" then
 		panel.Visible = false
@@ -209,20 +213,24 @@ RunService.RenderStepped:Connect(function()
 	local remaining = math.max(0, endsAt - now)
 	local score = tonumber(activePayload.Score) or 0
 	local goal = tonumber(activePayload.Goal) or 5
-	local smartText = tonumber(activePayload.AutoSolveDelay) and "   SMART" or ""
-	header.Text = "BRAIN QUIZ   " .. tostring(score) .. "/" .. tostring(goal)
+	local difficulty = tostring(activePayload.Difficulty or "NORMAL")
+	local smartText = tonumber(activePayload.AutoSolveDelay) and " · SMART" or ""
+	header.Text = "BRAIN QUIZ · " .. difficulty
+		.. "   " .. tostring(score) .. "/" .. tostring(goal)
 		.. "   " .. tostring(math.ceil(remaining)) .. "s" .. smartText
 
+	local winsEarned = tonumber(activePayload.WinsEarned) or 0
 	local autoSolveAt = tonumber(activePayload.AutoSolveAt)
 	if autoSolveAt and remaining > 0 then
 		local autoRemaining = math.max(0, autoSolveAt - now)
 		feedback.Text = tostring(activePayload.BaseFeedback or "SMART SOLVE")
+			.. " · +" .. tostring(winsEarned) .. " WINS"
 			.. " · AUTO " .. tostring(math.ceil(autoRemaining)) .. "s"
 	end
 
 	if remaining <= 0 then
-		feedback.Text = "TIME UP"
+		feedback.Text = "TIME UP · +" .. tostring(winsEarned) .. " WINS KEPT"
 	end
 end)
 
-print("[BrainQuizUI] Ready largeText=true smartSolve=true parent=" .. brainGui:GetFullName())
+print("[BrainQuizUI] Ready largeText=true difficulty=true rewardPerCorrect=1 smartSolve=true parent=" .. brainGui:GetFullName())
