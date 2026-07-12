@@ -303,6 +303,10 @@ local function startRun(player)
 
 	local state = getState(player)
 	local now = Workspace:GetServerTimeNow()
+	if state.Active then
+		firePopup(player, "QUIZ ACTIVE", "Answer the current question on A, B, or C")
+		return
+	end
 	if now < state.CooldownUntil then
 		local remaining = math.max(1, math.ceil(state.CooldownUntil - now))
 		firePopup(player, "QUIZ COOLDOWN", "Ready in " .. tostring(remaining) .. "s")
