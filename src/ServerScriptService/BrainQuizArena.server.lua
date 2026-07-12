@@ -85,6 +85,7 @@ local random = Random.new()
 local states = {}
 local saveStates = {}
 local installedMap = nil
+local difficultyTouchAt = {}
 local answerQuestion
 
 local function firePopup(player, title, subtitle)
@@ -485,6 +486,13 @@ local function selectDifficulty(player, difficultyName)
 	if not config then
 		return
 	end
+
+	local now = os.clock()
+	local lastTouch = tonumber(difficultyTouchAt[player.UserId]) or 0
+	if now - lastTouch < 1.25 then
+		return
+	end
+	difficultyTouchAt[player.UserId] = now
 	local state = getState(player)
 	if state.Active then
 		firePopup(player, "QUIZ ACTIVE", "Difficulty can be changed before the next run")
@@ -686,7 +694,7 @@ local function installArena(map)
 
 	removeLegacyActivities(map)
 	local scale = tonumber(map:GetAttribute("WorldScale")) or 2.5
-	local center = Vector3.new(48 * scale, 0, -38 * scale)
+	local center = Vector3.new(48 * scale, 0, -34 * scale)
 
 	local arena = Instance.new("Model")
 	arena.Name = ARENA_NAME
@@ -856,4 +864,5 @@ end
 Players.PlayerRemoving:Connect(function(player)
 	states[player.UserId] = nil
 	saveStates[player.UserId] = nil
+	difficultyTouchAt[player.UserId] = nil
 end)
