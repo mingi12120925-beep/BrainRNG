@@ -1,83 +1,125 @@
 -- StarterPlayerScripts/BrainQuizQuickAutoButton.client.lua
--- Always-visible, high-contrast quiz AUTO control.
--- Character overhead IQ/WINS UI is intentionally untouched.
+-- Standalone, always-visible AUTO control for the Brain Quiz.
+-- This does not depend on BrainRNG_UI and intentionally leaves overhead IQ/WINS UI untouched.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local BrainQuizState = remotes:WaitForChild("BrainQuizState")
 local BrainQuizAutoToggle = remotes:WaitForChild("BrainQuizAutoToggle")
 
-local playerGui = player:WaitForChild("PlayerGui")
-local brainGui = playerGui:WaitForChild("BrainRNG_UI", 20)
-if not brainGui or not brainGui:IsA("ScreenGui") then
-	warn("[BrainQuizQuickAuto] BrainRNG_UI missing")
-	return
+local oldStandalone = playerGui:FindFirstChild("BrainQuizAutoUI")
+if oldStandalone then
+	oldStandalone:Destroy()
 end
 
-local oldButton = brainGui:FindFirstChild("QuizAutoQuickButton")
-if oldButton then
-	oldButton:Destroy()
+local function removeLegacyButtons()
+	local brainGui = playerGui:FindFirstChild("BrainRNG_UI")
+	if not brainGui then
+		return
+	end
+
+	local oldQuickButton = brainGui:FindFirstChild("QuizAutoQuickButton")
+	if oldQuickButton then
+		oldQuickButton:Destroy()
+	end
+
+	local panel = brainGui:FindFirstChild("BrainQuizPanel")
+	local internalButton = panel and panel:FindFirstChild("AutoToggleButton")
+	if internalButton and internalButton:IsA("GuiObject") then
+		internalButton.Visible = false
+		internalButton.Active = false
+	end
 end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "BrainQuizAutoUI"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = false
+screenGui.DisplayOrder = 10000
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+screenGui.Enabled = true
+screenGui.Parent = playerGui
+
+pcall(function()
+	screenGui.OnTopOfCoreBlur = true
+end)
+
+local shadow = Instance.new("Frame")
+shadow.Name = "Shadow"
+shadow.Position = UDim2.fromOffset(15, 11)
+shadow.Size = UDim2.fromOffset(184, 50)
+shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+shadow.BackgroundTransparency = 0.55
+shadow.BorderSizePixel = 0
+shadow.ZIndex = 1000
+shadow.Parent = screenGui
+
+local shadowCorner = Instance.new("UICorner")
+shadowCorner.CornerRadius = UDim.new(0, 10)
+shadowCorner.Parent = shadow
 
 local button = Instance.new("TextButton")
-button.Name = "QuizAutoQuickButton"
-button.AnchorPoint = Vector2.new(0, 0)
-button.Position = UDim2.fromOffset(12, 62)
-button.Size = UDim2.fromOffset(156, 42)
-button.BackgroundColor3 = Color3.fromRGB(248, 246, 239)
+button.Name = "QuizAutoButton"
+button.Position = UDim2.fromOffset(10, 6)
+button.Size = UDim2.fromOffset(184, 50)
+button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 button.BorderSizePixel = 0
 button.AutoButtonColor = true
 button.Font = Enum.Font.GothamBold
-button.Text = "QUIZ AUTO  ON"
-button.TextColor3 = Color3.fromRGB(24, 29, 35)
-button.TextSize = 17
+button.Text = "QUIZ AUTO: ON"
+button.TextColor3 = Color3.fromRGB(18, 22, 28)
+button.TextSize = 19
 button.TextStrokeTransparency = 1
+button.TextWrapped = false
 button.Visible = true
-button.ZIndex = 120
-button.Parent = brainGui
+button.Active = true
+button.Selectable = true
+button.ZIndex = 1001
+button.Parent = screenGui
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
-corner.Parent = button
+local buttonCorner = Instance.new("UICorner")
+buttonCorner.CornerRadius = UDim.new(0, 10)
+buttonCorner.Parent = button
 
-local border = Instance.new("UIStroke")
-border.Thickness = 3
-border.Color = Color3.fromRGB(42, 126, 72)
-border.Transparency = 0
-border.Parent = button
+local buttonStroke = Instance.new("UIStroke")
+buttonStroke.Name = "StateBorder"
+buttonStroke.Thickness = 4
+buttonStroke.Color = Color3.fromRGB(39, 137, 76)
+buttonStroke.Transparency = 0
+buttonStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+buttonStroke.Parent = button
+
+local sizeConstraint = Instance.new("UITextSizeConstraint")
+sizeConstraint.MinTextSize = 16
+sizeConstraint.MaxTextSize = 20
+sizeConstraint.Parent = button
 
 local autoEnabled = true
 local togglePending = false
 
 local function updateButton()
-	button.Text = autoEnabled and "QUIZ AUTO  ON" or "QUIZ AUTO  OFF"
-	button.BackgroundColor3 = Color3.fromRGB(248, 246, 239)
-	button.TextColor3 = Color3.fromRGB(24, 29, 35)
-	border.Color = autoEnabled
-		and Color3.fromRGB(42, 126, 72)
-		or Color3.fromRGB(155, 55, 61)
-end
-
-local function hideDuplicatePanelButton()
-	local panel = brainGui:FindFirstChild("BrainQuizPanel")
-	local duplicate = panel and panel:FindFirstChild("AutoToggleButton")
-	if duplicate and duplicate:IsA("GuiObject") then
-		duplicate.Visible = false
-		duplicate.Active = false
-	end
+	button.Text = autoEnabled and "QUIZ AUTO: ON" or "QUIZ AUTO: OFF"
+	button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	button.TextColor3 = Color3.fromRGB(18, 22, 28)
+	buttonStroke.Color = autoEnabled
+		and Color3.fromRGB(39, 137, 76)
+		or Color3.fromRGB(190, 56, 64)
 end
 
 button.Activated:Connect(function()
 	if togglePending then
 		return
 	end
+
 	togglePending = true
 	autoEnabled = not autoEnabled
 	updateButton()
 	BrainQuizAutoToggle:FireServer(autoEnabled)
+
 	task.delay(1.5, function()
 		togglePending = false
 	end)
@@ -92,23 +134,31 @@ BrainQuizState.OnClientEvent:Connect(function(payload)
 		togglePending = false
 		updateButton()
 	end
-	hideDuplicatePanelButton()
 end)
 
-brainGui.DescendantAdded:Connect(function(descendant)
-	if descendant.Name == "AutoToggleButton" then
-		task.defer(hideDuplicatePanelButton)
+playerGui.ChildAdded:Connect(function(child)
+	if child.Name == "BrainRNG_UI" then
+		task.defer(removeLegacyButtons)
 	end
 end)
 
+removeLegacyButtons()
+updateButton()
+
+-- Defensive visibility guard: no other UI script may hide or reparent this control.
 task.spawn(function()
-	while button.Parent do
+	while player.Parent do
+		if screenGui.Parent ~= playerGui then
+			screenGui.Parent = playerGui
+		end
+		screenGui.Enabled = true
+		screenGui.DisplayOrder = 10000
 		button.Visible = true
-		hideDuplicatePanelButton()
+		button.Active = true
+		shadow.Visible = true
+		removeLegacyButtons()
 		task.wait(0.5)
 	end
 end)
 
-updateButton()
-hideDuplicatePanelButton()
-print("[BrainQuizQuickAuto] Ready alwaysVisible=true position=12,62 size=156x42 highContrast=true overheadUIException=true")
+print("[BrainQuizAutoUI] Ready standalone=true alwaysVisible=true displayOrder=10000 size=184x50 overheadUIException=true")
