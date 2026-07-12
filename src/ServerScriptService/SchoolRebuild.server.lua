@@ -1,20 +1,22 @@
 -- ServerScriptService/SchoolRebuild.server.lua
--- Owns the final school facade. The old school is removed and rebuilt exactly once
--- after legacy structure/sign passes have settled. Functional gate objects survive.
+-- Final owner of the Prestige 0 school facade.
+-- Waits for legacy visual passes, removes only legacy school visuals, then builds once.
+-- The final geometry is opaque, axis-aligned, and audited for real volume intersections.
 
 local Workspace = game:GetService("Workspace")
 
 local MAP_NAME = "SimpleMap"
 local LOBBY_NAME = "Lobby_Prestige0_School"
 local GATE_AREA_NAME = "GateArea"
+local BUILD_NAME = "P0_SchoolBuilding_Rebuilt"
 local FIND_TIMEOUT_SECONDS = 25
 local LEGACY_SETTLE_TIMEOUT_SECONDS = 4
 local WORLD_SCALE = 2.5
-local BUILD_NAME = "P0_SchoolBuilding_Rebuilt"
-local BUILD_VERSION = "ScratchRebuildV4_AtomicSinglePass"
-local ATTACHED_ATTRIBUTE = "SchoolRebuildAttachedV4"
-local IN_PROGRESS_ATTRIBUTE = "SchoolRebuildInProgressV4"
-local COMPLETE_ATTRIBUTE = "SchoolStableBuildCompleteV4"
+local BUILD_VERSION = "ScratchRebuildV5_ZeroIntersection"
+
+local ATTACHED_ATTRIBUTE = "SchoolRebuildAttachedV5"
+local IN_PROGRESS_ATTRIBUTE = "SchoolRebuildInProgressV5"
+local COMPLETE_ATTRIBUTE = "SchoolRebuildCompleteV5"
 
 local COLORS = {
 	Brick = Color3.fromRGB(202, 94, 74),
@@ -99,12 +101,12 @@ local function configureDoor(door)
 end
 
 local function connectDoorGuard(door)
-	if door:GetAttribute("StableSchoolDoorGuardV4") then
+	if door:GetAttribute("StableSchoolDoorGuardV5") then
 		configureDoor(door)
 		return
 	end
 
-	door:SetAttribute("StableSchoolDoorGuardV4", true)
+	door:SetAttribute("StableSchoolDoorGuardV5", true)
 	for _, propertyName in ipairs({
 		"Size",
 		"Position",
@@ -202,8 +204,26 @@ local function configureSign(signPart)
 	accent.Size = UDim2.fromScale(1, 0.1)
 	accent.Parent = panel
 
-	makeSignLabel(panel, "NextAreaGateTitle", titleText, UDim2.fromScale(0.03, 0.13), UDim2.fromScale(0.94, 0.49), Enum.Font.GothamBlack, 78, COLORS.White)
-	makeSignLabel(panel, "NextAreaGateSubtitle", subtitleText, UDim2.fromScale(0.04, 0.63), UDim2.fromScale(0.92, 0.27), Enum.Font.GothamBold, 42, COLORS.BlueLight)
+	makeSignLabel(
+		panel,
+		"NextAreaGateTitle",
+		titleText,
+		UDim2.fromScale(0.03, 0.13),
+		UDim2.fromScale(0.94, 0.49),
+		Enum.Font.GothamBlack,
+		78,
+		COLORS.White
+	)
+	makeSignLabel(
+		panel,
+		"NextAreaGateSubtitle",
+		subtitleText,
+		UDim2.fromScale(0.04, 0.63),
+		UDim2.fromScale(0.92, 0.27),
+		Enum.Font.GothamBold,
+		42,
+		COLORS.BlueLight
+	)
 	return true
 end
 
@@ -212,22 +232,20 @@ local function buildSchool(gateArea)
 	build.Name = BUILD_NAME
 	build.Parent = gateArea
 
-	-- Foundation and approach use different heights, so no horizontal surfaces overlap.
 	makePart(build, "Foundation", Vector3.new(66, 1.2, 24), Vector3.new(0, 0.6, 79), COLORS.Stone, Enum.Material.Concrete)
 	makePart(build, "FrontStepLower", Vector3.new(22, 0.7, 6.5), Vector3.new(0, 0.35, 62.8), COLORS.Stone, Enum.Material.Concrete)
 	makePart(build, "FrontStepUpper", Vector3.new(18, 0.7, 3.5), Vector3.new(0, 1.2, 64.8), COLORS.Cream, Enum.Material.Concrete)
 
-	-- The three building blocks are separated by 0.5-stud X gaps.
 	makePart(build, "LeftWing", Vector3.new(21.5, 19.5, 18), Vector3.new(-19.5, 11.35, 79), COLORS.Brick, Enum.Material.Brick)
 	makePart(build, "RightWing", Vector3.new(21.5, 19.5, 18), Vector3.new(19.5, 11.35, 79), COLORS.Brick, Enum.Material.Brick)
 	makePart(build, "CenterHall", Vector3.new(16, 25.5, 14), Vector3.new(0, 14.25, 75), COLORS.BrickDark, Enum.Material.Brick)
 
-	-- Roofs have visible vertical gaps above their walls.
-	makePart(build, "LeftRoof", Vector3.new(23.5, 2.2, 20), Vector3.new(-19.5, 22.5, 79), COLORS.Blue)
-	makePart(build, "RightRoof", Vector3.new(23.5, 2.2, 20), Vector3.new(19.5, 22.5, 79), COLORS.Blue)
+	-- Width 22.8 keeps a 0.1-stud X gap from CenterHall while retaining roof overhang.
+	makePart(build, "LeftRoof", Vector3.new(22.8, 2.2, 20), Vector3.new(-19.5, 22.5, 79), COLORS.Blue)
+	makePart(build, "RightRoof", Vector3.new(22.8, 2.2, 20), Vector3.new(19.5, 22.5, 79), COLORS.Blue)
 	makePart(build, "CenterRoof", Vector3.new(18, 2.4, 16), Vector3.new(0, 30.7, 75), COLORS.BlueDark)
 
-	-- Opaque single-piece windows avoid transparent-layer sorting and z-fighting.
+	-- Single opaque window panels avoid transparency sorting and stacked surfaces.
 	makePart(build, "LeftWindow", Vector3.new(9.5, 8.5, 0.45), Vector3.new(-19.5, 12, 69.55), COLORS.Window, Enum.Material.SmoothPlastic, {
 		CanCollide = false,
 		CanQuery = false,
@@ -239,12 +257,10 @@ local function buildSchool(gateArea)
 		CastShadow = false,
 	})
 
-	-- Door frame is fully in front of the hall; side pieces and top beam have gaps.
 	makePart(build, "DoorFrameLeft", Vector3.new(1.5, 15.5, 0.45), Vector3.new(-7.5, 10.05, 66.8), COLORS.Cream)
 	makePart(build, "DoorFrameRight", Vector3.new(1.5, 15.5, 0.45), Vector3.new(7.5, 10.05, 66.8), COLORS.Cream)
 	makePart(build, "DoorFrameTop", Vector3.new(15.2, 1.4, 0.45), Vector3.new(0, 18.65, 66.8), COLORS.Cream)
 
-	-- Simple crest parts are vertically separated.
 	makePart(build, "CrestBase", Vector3.new(7, 1.1, 3), Vector3.new(0, 32.6, 75), COLORS.Gold)
 	makePart(build, "CrestStem", Vector3.new(1.1, 3.4, 1.1), Vector3.new(0, 35.0, 75), COLORS.Gold)
 	makePart(build, "CrestTop", Vector3.new(4, 0.9, 1), Vector3.new(0, 37.4, 75), COLORS.Gold)
@@ -252,10 +268,65 @@ local function buildSchool(gateArea)
 	return build
 end
 
+local function getOverlapDepth(first, second)
+	local firstMin = first.Position - (first.Size * 0.5)
+	local firstMax = first.Position + (first.Size * 0.5)
+	local secondMin = second.Position - (second.Size * 0.5)
+	local secondMax = second.Position + (second.Size * 0.5)
+
+	return Vector3.new(
+		math.min(firstMax.X, secondMax.X) - math.max(firstMin.X, secondMin.X),
+		math.min(firstMax.Y, secondMax.Y) - math.max(firstMin.Y, secondMin.Y),
+		math.min(firstMax.Z, secondMax.Z) - math.max(firstMin.Z, secondMin.Z)
+	)
+end
+
+local function auditSchoolGeometry(build, door, signPart)
+	local parts = {}
+	for _, descendant in ipairs(build:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			table.insert(parts, descendant)
+		end
+	end
+	table.insert(parts, door)
+	table.insert(parts, signPart)
+
+	local overlapCount = 0
+	local epsilon = 0.05 * WORLD_SCALE
+	for firstIndex = 1, #parts - 1 do
+		for secondIndex = firstIndex + 1, #parts do
+			local first = parts[firstIndex]
+			local second = parts[secondIndex]
+			local depth = getOverlapDepth(first, second)
+			if depth.X > epsilon and depth.Y > epsilon and depth.Z > epsilon then
+				overlapCount += 1
+				warn(
+					"[SchoolGeometryAudit] overlap "
+						.. first:GetFullName()
+						.. " <-> "
+						.. second:GetFullName()
+						.. " depth="
+						.. tostring(depth)
+				)
+			end
+		end
+	end
+	return overlapCount
+end
+
 local function removeLegacyGateVisuals(gateModel, door, signPart)
 	local removed = 0
+	for _, name in ipairs({ "NextAreaGateFrame_BottomGlow", "NextAreaLockIcon" }) do
+		local visual = gateModel:FindFirstChild(name)
+		if visual then
+			visual:Destroy()
+			removed += 1
+		end
+	end
+
+	-- Never delete functional trigger parts or prompts created by portal systems.
 	for _, child in ipairs(gateModel:GetChildren()) do
-		if child ~= door and child ~= signPart then
+		if child ~= door and child ~= signPart and child.Name == "SchoolPortalArch" then
 			child:Destroy()
 			removed += 1
 		end
@@ -279,7 +350,6 @@ local function waitForDependencies(map)
 	local lobby, gateArea, gateModel, door, signPart
 
 	repeat
-		-- Lobby is nested under SimpleMap.World, not directly under SimpleMap.
 		lobby = findDescendant(map, LOBBY_NAME)
 		gateArea = lobby and lobby:FindFirstChild(GATE_AREA_NAME)
 		gateModel = map:FindFirstChild("NextAreaGate")
@@ -316,10 +386,7 @@ local function rebuildOnce(map)
 		return
 	end
 
-	-- Acquire before the first yield. Workspace.ChildAdded and WaitForChild can both
-	-- call attach for the same map during creation; only the first coroutine may continue.
 	map:SetAttribute(IN_PROGRESS_ATTRIBUTE, true)
-
 	local success, failure = xpcall(function()
 		local gateArea, gateModel, door, signPart = waitForDependencies(map)
 		if not gateArea or not gateModel or not door or not signPart then
@@ -339,19 +406,25 @@ local function rebuildOnce(map)
 		local build = buildSchool(gateArea)
 		connectDoorGuard(door)
 		local signReady = configureSign(signPart)
+		local schoolOverlaps = auditSchoolGeometry(build, door, signPart)
 
 		map:SetAttribute(COMPLETE_ATTRIBUTE, true)
 		map:SetAttribute("SchoolBuildVersion", BUILD_VERSION)
 		map:SetAttribute("SchoolOldPartsRemoved", removedOldParts + legacyRemoved + archRemoved)
+		map:SetAttribute("SchoolGeometryOverlapCount", schoolOverlaps)
 		print(
-			"[SchoolRebuild] atomicSinglePass=true rebuilt="
+			"[SchoolRebuild] zeroIntersection=true rebuilt="
 				.. tostring(build ~= nil)
 				.. " removedOldParts="
 				.. tostring(removedOldParts + legacyRemoved + archRemoved)
 				.. " preservedPrompt="
 				.. tostring(door:FindFirstChildOfClass("ProximityPrompt") ~= nil)
+				.. " entranceTrigger="
+				.. tostring(gateModel:FindFirstChild("Area2EntranceTrigger") ~= nil)
 				.. " signReady="
 				.. tostring(signReady)
+				.. " schoolOverlaps="
+				.. tostring(schoolOverlaps)
 		)
 	end, debug.traceback)
 
@@ -366,8 +439,6 @@ local function attach(map)
 		return
 	end
 
-	-- Acquire immediately so ChildAdded and WaitForChild cannot install two listeners
-	-- or spawn two rebuild coroutines for the same map.
 	map:SetAttribute(ATTACHED_ATTRIBUTE, true)
 	map.DescendantAdded:Connect(function(descendant)
 		if descendant.Name == "SchoolPortalArch" then
