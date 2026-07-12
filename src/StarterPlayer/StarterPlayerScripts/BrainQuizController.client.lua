@@ -1,5 +1,5 @@
 -- StarterPlayerScripts/BrainQuizController.client.lua
--- Adds a compact per-player quiz panel inside the existing BrainRNG ScreenGui.
+-- Large, responsive per-player quiz panel inside the existing BrainRNG ScreenGui.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -25,35 +25,42 @@ end
 local panel = Instance.new("Frame")
 panel.Name = "BrainQuizPanel"
 panel.AnchorPoint = Vector2.new(0.5, 0)
-panel.Position = UDim2.new(0.5, 0, 0, 10)
-panel.Size = UDim2.new(0.48, 0, 0, 108)
+panel.Position = UDim2.new(0.5, 0, 0, 6)
+panel.Size = UDim2.new(0.62, 0, 0, 148)
 panel.BackgroundColor3 = Color3.fromRGB(26, 37, 58)
-panel.BackgroundTransparency = 0.05
+panel.BackgroundTransparency = 0.03
 panel.BorderSizePixel = 0
 panel.Visible = false
 panel.ZIndex = 80
 panel.Parent = brainGui
 
 local sizeConstraint = Instance.new("UISizeConstraint")
-sizeConstraint.MinSize = Vector2.new(320, 108)
-sizeConstraint.MaxSize = Vector2.new(520, 108)
+sizeConstraint.MinSize = Vector2.new(300, 148)
+sizeConstraint.MaxSize = Vector2.new(680, 148)
 sizeConstraint.Parent = panel
 
 local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 12)
+corner.CornerRadius = UDim.new(0, 14)
 corner.Parent = panel
 
 local stroke = Instance.new("UIStroke")
-stroke.Thickness = 2
+stroke.Thickness = 3
 stroke.Color = Color3.fromRGB(100, 170, 255)
-stroke.Transparency = 0.1
+stroke.Transparency = 0.05
 stroke.Parent = panel
+
+local function constrainText(label, minSize, maxSize)
+	local constraint = Instance.new("UITextSizeConstraint")
+	constraint.MinTextSize = minSize
+	constraint.MaxTextSize = maxSize
+	constraint.Parent = label
+end
 
 local header = Instance.new("TextLabel")
 header.Name = "Header"
 header.BackgroundTransparency = 1
-header.Position = UDim2.fromOffset(12, 5)
-header.Size = UDim2.new(1, -24, 0, 22)
+header.Position = UDim2.fromOffset(14, 6)
+header.Size = UDim2.new(1, -28, 0, 28)
 header.Font = Enum.Font.GothamBold
 header.Text = "BRAIN QUIZ"
 header.TextColor3 = Color3.fromRGB(170, 215, 255)
@@ -61,12 +68,13 @@ header.TextScaled = true
 header.TextXAlignment = Enum.TextXAlignment.Left
 header.ZIndex = 81
 header.Parent = panel
+constrainText(header, 16, 23)
 
 local question = Instance.new("TextLabel")
 question.Name = "Question"
 question.BackgroundTransparency = 1
-question.Position = UDim2.fromOffset(12, 29)
-question.Size = UDim2.new(1, -24, 0, 32)
+question.Position = UDim2.fromOffset(14, 35)
+question.Size = UDim2.new(1, -28, 0, 47)
 question.Font = Enum.Font.GothamBlack
 question.Text = ""
 question.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -74,12 +82,13 @@ question.TextScaled = true
 question.TextWrapped = true
 question.ZIndex = 81
 question.Parent = panel
+constrainText(question, 17, 30)
 
 local choices = Instance.new("TextLabel")
 choices.Name = "Choices"
 choices.BackgroundTransparency = 1
-choices.Position = UDim2.fromOffset(12, 63)
-choices.Size = UDim2.new(1, -24, 0, 24)
+choices.Position = UDim2.fromOffset(14, 84)
+choices.Size = UDim2.new(1, -28, 0, 32)
 choices.Font = Enum.Font.GothamBold
 choices.Text = ""
 choices.TextColor3 = Color3.fromRGB(255, 230, 125)
@@ -87,18 +96,21 @@ choices.TextScaled = true
 choices.TextWrapped = false
 choices.ZIndex = 81
 choices.Parent = panel
+constrainText(choices, 17, 27)
 
 local feedback = Instance.new("TextLabel")
 feedback.Name = "Feedback"
 feedback.BackgroundTransparency = 1
-feedback.Position = UDim2.fromOffset(12, 88)
-feedback.Size = UDim2.new(1, -24, 0, 15)
+feedback.Position = UDim2.fromOffset(14, 118)
+feedback.Size = UDim2.new(1, -28, 0, 23)
 feedback.Font = Enum.Font.GothamMedium
 feedback.Text = ""
-feedback.TextColor3 = Color3.fromRGB(195, 205, 225)
+feedback.TextColor3 = Color3.fromRGB(195, 215, 235)
 feedback.TextScaled = true
+feedback.TextWrapped = false
 feedback.ZIndex = 81
 feedback.Parent = panel
+constrainText(feedback, 13, 18)
 
 local activePayload = nil
 local hideToken = 0
@@ -123,19 +135,29 @@ local function showResult(titleText, questionText, feedbackText, strokeColor)
 	choices.Text = ""
 	feedback.Text = feedbackText or ""
 	stroke.Color = strokeColor
-	scheduleHide(3)
+	scheduleHide(3.5)
 end
 
 local function renderActive(payload)
 	hideToken += 1
 	activePayload = payload
+	activePayload.BaseFeedback = tostring(payload.Feedback or "STEP ON A, B, OR C")
 	panel.Visible = true
 	stroke.Color = Color3.fromRGB(100, 170, 255)
 	question.Text = tostring(payload.Prompt or "QUESTION")
 
 	local options = type(payload.Options) == "table" and payload.Options or {}
-	choices.Text = "A  " .. tostring(options[1] or "?") .. "     B  " .. tostring(options[2] or "?") .. "     C  " .. tostring(options[3] or "?")
-	feedback.Text = tostring(payload.Feedback or "STEP ON A, B, OR C")
+	choices.Text = "A  " .. tostring(options[1] or "?")
+		.. "      B  " .. tostring(options[2] or "?")
+		.. "      C  " .. tostring(options[3] or "?")
+
+	local autoDelay = tonumber(payload.AutoSolveDelay)
+	if autoDelay then
+		feedback.Text = activePayload.BaseFeedback .. " · AUTO " .. tostring(autoDelay) .. "s"
+	else
+		local requiredIQ = tonumber(payload.AutoSolveRequiredIQ) or 500
+		feedback.Text = activePayload.BaseFeedback .. " · SMART SOLVE AT " .. tostring(requiredIQ) .. " IQ"
+	end
 end
 
 BrainQuizState.OnClientEvent:Connect(function(payload)
@@ -149,8 +171,17 @@ BrainQuizState.OnClientEvent:Connect(function(payload)
 	elseif phase == "Complete" then
 		local reward = tonumber(payload.RewardWins) or 0
 		local perfect = payload.Perfect == true
+		local autoSolvedCount = tonumber(payload.AutoSolvedCount) or 0
+		local titleText
+		if perfect then
+			titleText = "MANUAL PERFECT!"
+		elseif autoSolvedCount > 0 then
+			titleText = "SMART SOLVE COMPLETE!"
+		else
+			titleText = "QUIZ COMPLETE!"
+		end
 		showResult(
-			perfect and "PERFECT QUIZ!" or "QUIZ COMPLETE!",
+			titleText,
 			"+" .. tostring(reward) .. " WINS",
 			"Return after the cooldown to play again",
 			Color3.fromRGB(80, 225, 135)
@@ -173,15 +204,25 @@ RunService.RenderStepped:Connect(function()
 		return
 	end
 
-	local endsAt = tonumber(activePayload.EndsAt) or Workspace:GetServerTimeNow()
-	local remaining = math.max(0, endsAt - Workspace:GetServerTimeNow())
+	local now = Workspace:GetServerTimeNow()
+	local endsAt = tonumber(activePayload.EndsAt) or now
+	local remaining = math.max(0, endsAt - now)
 	local score = tonumber(activePayload.Score) or 0
 	local goal = tonumber(activePayload.Goal) or 5
-	header.Text = "BRAIN QUIZ   " .. tostring(score) .. "/" .. tostring(goal) .. "   " .. tostring(math.ceil(remaining)) .. "s"
+	local smartText = tonumber(activePayload.AutoSolveDelay) and "   SMART" or ""
+	header.Text = "BRAIN QUIZ   " .. tostring(score) .. "/" .. tostring(goal)
+		.. "   " .. tostring(math.ceil(remaining)) .. "s" .. smartText
+
+	local autoSolveAt = tonumber(activePayload.AutoSolveAt)
+	if autoSolveAt and remaining > 0 then
+		local autoRemaining = math.max(0, autoSolveAt - now)
+		feedback.Text = tostring(activePayload.BaseFeedback or "SMART SOLVE")
+			.. " · AUTO " .. tostring(math.ceil(autoRemaining)) .. "s"
+	end
 
 	if remaining <= 0 then
 		feedback.Text = "TIME UP"
 	end
 end)
 
-print("[BrainQuizUI] Ready parent=" .. brainGui:GetFullName())
+print("[BrainQuizUI] Ready largeText=true smartSolve=true parent=" .. brainGui:GetFullName())
