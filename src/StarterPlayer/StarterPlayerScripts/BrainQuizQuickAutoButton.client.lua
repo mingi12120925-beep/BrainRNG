@@ -25,15 +25,15 @@ end
 local button = Instance.new("TextButton")
 button.Name = "QuizAutoQuickButton"
 button.AnchorPoint = Vector2.new(0, 0)
-button.Position = UDim2.fromOffset(16, 62)
-button.Size = UDim2.fromOffset(168, 42)
+button.Position = UDim2.fromOffset(12, 62)
+button.Size = UDim2.fromOffset(156, 42)
 button.BackgroundColor3 = Color3.fromRGB(248, 246, 239)
 button.BorderSizePixel = 0
 button.AutoButtonColor = true
 button.Font = Enum.Font.GothamBold
-button.Text = "QUIZ AUTO   ON"
+button.Text = "QUIZ AUTO  ON"
 button.TextColor3 = Color3.fromRGB(24, 29, 35)
-button.TextSize = 18
+button.TextSize = 17
 button.TextStrokeTransparency = 1
 button.Visible = true
 button.ZIndex = 120
@@ -53,7 +53,7 @@ local autoEnabled = true
 local togglePending = false
 
 local function updateButton()
-	button.Text = autoEnabled and "QUIZ AUTO   ON" or "QUIZ AUTO   OFF"
+	button.Text = autoEnabled and "QUIZ AUTO  ON" or "QUIZ AUTO  OFF"
 	button.BackgroundColor3 = Color3.fromRGB(248, 246, 239)
 	button.TextColor3 = Color3.fromRGB(24, 29, 35)
 	border.Color = autoEnabled
@@ -111,4 +111,4 @@ end)
 
 updateButton()
 hideDuplicatePanelButton()
-print("[BrainQuizQuickAuto] Ready alwaysVisible=true position=16,62 highContrast=true overheadUIException=true")
+print("[BrainQuizQuickAuto] Ready alwaysVisible=true position=12,62 size=156x42 highContrast=true overheadUIException=true")
