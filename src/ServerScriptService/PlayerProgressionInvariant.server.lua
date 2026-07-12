@@ -1,17 +1,12 @@
 -- ServerScriptService/PlayerProgressionInvariant.server.lua
--- Brain RNG rule: progression values such as IQ must never resize the avatar or
--- change normal player movement. This server-authoritative guard keeps movement
--- fixed and restores the avatar's original Roblox appearance scale if another
--- script attempts to mutate it after spawning.
+-- Global movement is fixed; IQ never changes speed or avatar scale.
 
 local Players = game:GetService("Players")
 
-local FIXED_WALK_SPEED = 30
+local FIXED_WALK_SPEED = 40
 local FIXED_JUMP_POWER = 50
 local FIXED_JUMP_HEIGHT = 7.2
-local APPEARANCE_WAIT_SECONDS = 8
-
-local SCALE_VALUE_NAMES = {
+local SCALE_NAMES = {
 	BodyDepthScale = true,
 	BodyHeightScale = true,
 	BodyTypeScale = true,
@@ -20,148 +15,87 @@ local SCALE_VALUE_NAMES = {
 	ProportionScale = true,
 }
 
-local characterStates = setmetatable({}, { __mode = "k" })
-
-local function enforceMovement(humanoid, state)
-	if state.applyingMovement or not humanoid.Parent then
-		return
-	end
-
-	state.applyingMovement = true
-	if humanoid.WalkSpeed ~= FIXED_WALK_SPEED then
-		humanoid.WalkSpeed = FIXED_WALK_SPEED
-	end
-	if humanoid.JumpPower ~= FIXED_JUMP_POWER then
-		humanoid.JumpPower = FIXED_JUMP_POWER
-	end
-	if humanoid.JumpHeight ~= FIXED_JUMP_HEIGHT then
-		humanoid.JumpHeight = FIXED_JUMP_HEIGHT
-	end
-	state.applyingMovement = false
-end
-
-local function connectMovementGuard(humanoid, state)
-	for _, propertyName in ipairs({ "WalkSpeed", "JumpPower", "JumpHeight" }) do
-		humanoid:GetPropertyChangedSignal(propertyName):Connect(function()
-			task.defer(function()
-				enforceMovement(humanoid, state)
-			end)
-		end)
-	end
-	enforceMovement(humanoid, state)
-end
-
-local function connectScaleValue(scaleValue, state)
-	if state.scaleConnections[scaleValue] or not scaleValue:IsA("NumberValue") then
-		return
-	end
-
-	local baseline = state.scaleBaselines[scaleValue.Name]
-	if baseline == nil then
-		baseline = scaleValue.Value
-		state.scaleBaselines[scaleValue.Name] = baseline
-	end
-
-	state.scaleConnections[scaleValue] = scaleValue:GetPropertyChangedSignal("Value"):Connect(function()
-		if state.applyingScale or not scaleValue.Parent then
-			return
-		end
-		task.defer(function()
-			if not scaleValue.Parent then
-				return
-			end
-			local expected = state.scaleBaselines[scaleValue.Name]
-			if expected ~= nil and math.abs(scaleValue.Value - expected) > 0.0001 then
-				state.applyingScale = true
-				scaleValue.Value = expected
-				state.applyingScale = false
-			end
-		end)
-	end)
-
-	if math.abs(scaleValue.Value - baseline) > 0.0001 then
-		state.applyingScale = true
-		scaleValue.Value = baseline
-		state.applyingScale = false
-	end
-end
-
-local function captureAndGuardScales(humanoid, state)
-	if state.scaleReady or not humanoid.Parent then
-		return
-	end
-
-	state.scaleReady = true
-	for _, child in ipairs(humanoid:GetChildren()) do
-		if SCALE_VALUE_NAMES[child.Name] and child:IsA("NumberValue") then
-			state.scaleBaselines[child.Name] = child.Value
-		end
-	end
-
-	for _, child in ipairs(humanoid:GetChildren()) do
-		if SCALE_VALUE_NAMES[child.Name] and child:IsA("NumberValue") then
-			connectScaleValue(child, state)
-		end
-	end
-
-	humanoid.ChildAdded:Connect(function(child)
-		if SCALE_VALUE_NAMES[child.Name] and child:IsA("NumberValue") then
-			task.defer(function()
-				connectScaleValue(child, state)
-			end)
-		end
-	end)
-end
+local guardedCharacters = setmetatable({}, { __mode = "k" })
 
 local function guardCharacter(player, character)
-	local humanoid = character:WaitForChild("Humanoid", 10)
-	if not humanoid or characterStates[character] then
+	if guardedCharacters[character] then
 		return
 	end
+	local humanoid = character:WaitForChild("Humanoid", 10)
+	if not humanoid then
+		return
+	end
+	guardedCharacters[character] = true
 
-	local state = {
-		applyingMovement = false,
-		applyingScale = false,
-		scaleReady = false,
-		scaleBaselines = {},
-		scaleConnections = setmetatable({}, { __mode = "k" }),
-	}
-	characterStates[character] = state
+	local applyingMovement = false
+	local function enforceMovement()
+		if applyingMovement or not humanoid.Parent then
+			return
+		end
+		applyingMovement = true
+		humanoid.WalkSpeed = FIXED_WALK_SPEED
+		humanoid.JumpPower = FIXED_JUMP_POWER
+		humanoid.JumpHeight = FIXED_JUMP_HEIGHT
+		applyingMovement = false
+	end
 
-	connectMovementGuard(humanoid, state)
+	for _, propertyName in ipairs({ "WalkSpeed", "JumpPower", "JumpHeight" }) do
+		humanoid:GetPropertyChangedSignal(propertyName):Connect(function()
+			task.defer(enforceMovement)
+		end)
+	end
+	enforceMovement()
+
+	local baselines = {}
+	local applyingScale = false
+	local function guardScale(valueObject)
+		if not valueObject:IsA("NumberValue") or not SCALE_NAMES[valueObject.Name] then
+			return
+		end
+		if baselines[valueObject.Name] == nil then
+			baselines[valueObject.Name] = valueObject.Value
+		end
+		valueObject:GetPropertyChangedSignal("Value"):Connect(function()
+			if applyingScale or not valueObject.Parent then
+				return
+			end
+			local expected = baselines[valueObject.Name]
+			if expected ~= nil and math.abs(valueObject.Value - expected) > 0.0001 then
+				applyingScale = true
+				valueObject.Value = expected
+				applyingScale = false
+			end
+		end)
+	end
 
 	task.spawn(function()
-		local deadline = os.clock() + APPEARANCE_WAIT_SECONDS
+		local deadline = os.clock() + 8
 		while character.Parent and not player:HasAppearanceLoaded() and os.clock() < deadline do
 			task.wait(0.1)
 		end
-		captureAndGuardScales(humanoid, state)
+		for _, child in ipairs(humanoid:GetChildren()) do
+			guardScale(child)
+		end
+		humanoid.ChildAdded:Connect(guardScale)
 	end)
 
 	player:SetAttribute("ProgressionMovementLocked", true)
 	player:SetAttribute("ProgressionAvatarScaleLocked", true)
-	print(
-		"[PlayerProgressionInvariant] Installed player="
-			.. player.Name
-			.. " walkSpeed="
-			.. tostring(FIXED_WALK_SPEED)
-			.. " statDrivenTransform=disabled"
-	)
+	print("[PlayerProgressionInvariant] Installed player=" .. player.Name .. " walkSpeed=40 statDrivenTransform=disabled")
 end
 
-local function connectPlayer(player)
+local function bindPlayer(player)
 	player.CharacterAdded:Connect(function(character)
 		task.spawn(guardCharacter, player, character)
 	end)
-
 	if player.Character then
 		task.spawn(guardCharacter, player, player.Character)
 	end
 end
 
-Players.PlayerAdded:Connect(connectPlayer)
+Players.PlayerAdded:Connect(bindPlayer)
 for _, player in ipairs(Players:GetPlayers()) do
-	connectPlayer(player)
+	bindPlayer(player)
 end
 
-print("[PlayerProgressionInvariant] Ready")
+print("[PlayerProgressionInvariant] Ready fixedWalkSpeed=40")
