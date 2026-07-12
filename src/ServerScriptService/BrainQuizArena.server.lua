@@ -1,6 +1,7 @@
 -- ServerScriptService/BrainQuizArena.server.lua
--- Brain Quiz Arena: answer randomized questions on physical A/B/C pads.
--- Every correct answer awards +1 Win, whether solved manually or by Smart Solve.
+-- Brain Quiz Arena: auto-first quiz play with optional manual answers.
+-- Every correct answer awards +1 Win. IQ 500+ guarantees auto solving;
+-- lower IQ uses repeated probability checks and moves the character to the correct pad on success.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -41,29 +42,25 @@ local WIN_PER_CORRECT = 1
 local WRONG_ANSWER_PENALTY_SECONDS = 5
 local COMPLETION_COOLDOWN_SECONDS = 60
 local ANSWER_DEBOUNCE_SECONDS = 0.65
+local GUARANTEED_AUTO_IQ = 500
+local LOW_IQ_MIN_CHANCE = 0.15
+local LOW_IQ_MAX_CHANCE = 0.90
+local LOW_IQ_RETRY_DELAY = 8
+local AUTO_MOVE_TIMEOUT = 4
 
 local DIFFICULTIES = {
-	Easy = {
-		DisplayName = "EASY",
-		TimeLimit = 75,
-	},
-	Normal = {
-		DisplayName = "NORMAL",
-		TimeLimit = 60,
-	},
-	Hard = {
-		DisplayName = "HARD",
-		TimeLimit = 45,
-	},
+	Easy = { DisplayName = "EASY", TimeLimit = 75 },
+	Normal = { DisplayName = "NORMAL", TimeLimit = 60 },
+	Hard = { DisplayName = "HARD", TimeLimit = 45 },
 }
 
 local DIFFICULTY_ORDER = { "Easy", "Normal", "Hard" }
 
-local AUTO_SOLVE_TIERS = {
+local GUARANTEED_AUTO_TIERS = {
 	{ RequiredIQ = 35000, Delay = 1 },
 	{ RequiredIQ = 10000, Delay = 2 },
 	{ RequiredIQ = 2000, Delay = 5 },
-	{ RequiredIQ = 500, Delay = 8 },
+	{ RequiredIQ = GUARANTEED_AUTO_IQ, Delay = 8 },
 }
 
 local COLORS = {
@@ -84,9 +81,11 @@ local COLORS = {
 local random = Random.new()
 local states = {}
 local saveStates = {}
+local answerPads = {}
 local installedMap = nil
 local difficultyTouchAt = {}
 local answerQuestion
+local scheduleAutoAttempt
 
 local function firePopup(player, title, subtitle)
 	PopupEvent:FireClient(player, tostring(title) .. "|" .. tostring(subtitle), "Info")
@@ -116,10 +115,15 @@ local function getState(player)
 			QuestionId = 0,
 			Token = 0,
 			LastAnswerAt = 0,
-			AutoSolveDelay = nil,
+			AutoSolveDelay = LOW_IQ_RETRY_DELAY,
 			AutoSolveAt = nil,
-			AutoSolveRequiredIQ = 500,
+			AutoSolveChance = LOW_IQ_MIN_CHANCE,
+			AutoSolveGuaranteed = false,
+			AutoSolveRequiredIQ = GUARANTEED_AUTO_IQ,
 			CurrentIQ = 0,
+			AutoMoving = false,
+			AutoMoveQuestionId = 0,
+			AutoMoveAnswerIndex = 0,
 		}
 		states[player.UserId] = state
 	end
@@ -140,18 +144,23 @@ local function resetActiveState(state)
 	state.Question = nil
 	state.QuestionId += 1
 	state.LastAnswerAt = 0
-	state.AutoSolveDelay = nil
 	state.AutoSolveAt = nil
+	state.AutoMoving = false
+	state.AutoMoveQuestionId = 0
+	state.AutoMoveAnswerIndex = 0
 end
 
-local function getAutoSolveInfo(player)
+local function getAutoProfile(player)
 	local currentIQ = math.max(0, tonumber(GameLogic.GetIQ(player)) or 0)
-	for _, tier in ipairs(AUTO_SOLVE_TIERS) do
+	for _, tier in ipairs(GUARANTEED_AUTO_TIERS) do
 		if currentIQ >= tier.RequiredIQ then
-			return tier.Delay, tier.RequiredIQ, currentIQ
+			return tier.Delay, 1, true, currentIQ
 		end
 	end
-	return nil, 500, currentIQ
+
+	local progress = math.clamp(currentIQ / GUARANTEED_AUTO_IQ, 0, 1)
+	local chance = LOW_IQ_MIN_CHANCE + (LOW_IQ_MAX_CHANCE - LOW_IQ_MIN_CHANCE) * progress
+	return LOW_IQ_RETRY_DELAY, chance, false, currentIQ
 end
 
 local function shuffle(values)
@@ -313,12 +322,11 @@ end
 local function prepareQuestion(player, state)
 	state.Question = buildQuestion(state.Difficulty)
 	state.QuestionId += 1
-	state.AutoSolveDelay, state.AutoSolveRequiredIQ, state.CurrentIQ = getAutoSolveInfo(player)
-	if state.AutoSolveDelay then
-		state.AutoSolveAt = math.min(state.EndsAt, Workspace:GetServerTimeNow() + state.AutoSolveDelay)
-	else
-		state.AutoSolveAt = nil
-	end
+	state.AutoMoving = false
+	state.AutoMoveQuestionId = 0
+	state.AutoMoveAnswerIndex = 0
+	state.AutoSolveDelay, state.AutoSolveChance, state.AutoSolveGuaranteed, state.CurrentIQ = getAutoProfile(player)
+	state.AutoSolveAt = math.min(state.EndsAt, Workspace:GetServerTimeNow() + state.AutoSolveDelay)
 end
 
 local function sendActiveState(player, state, feedback)
@@ -340,8 +348,11 @@ local function sendActiveState(player, state, feedback)
 		Feedback = feedback,
 		AutoSolveDelay = state.AutoSolveDelay,
 		AutoSolveAt = state.AutoSolveAt,
-		AutoSolveRequiredIQ = state.AutoSolveRequiredIQ,
+		AutoSolveChance = state.AutoSolveChance,
+		AutoSolveGuaranteed = state.AutoSolveGuaranteed,
+		AutoSolveRequiredIQ = GUARANTEED_AUTO_IQ,
 		CurrentIQ = state.CurrentIQ,
+		AutoMoving = state.AutoMoving,
 	})
 end
 
@@ -442,11 +453,7 @@ local function completeRun(player, state)
 		Elapsed = elapsed,
 		CooldownUntil = state.CooldownUntil,
 	})
-	firePopup(
-		player,
-		"QUIZ COMPLETE!",
-		"+" .. tostring(winsEarned) .. " Wins · " .. string.format("%.1fs", elapsed)
-	)
+	firePopup(player, "QUIZ COMPLETE!", "+" .. tostring(winsEarned) .. " Wins · " .. string.format("%.1fs", elapsed))
 	queueWinsSave(player)
 	print(
 		"[BrainQuizArena] Complete player=" .. player.Name
@@ -458,8 +465,74 @@ local function completeRun(player, state)
 	)
 end
 
-local function scheduleSmartSolve(player, state)
-	if not state.Active or not state.Question or not state.AutoSolveDelay or not state.AutoSolveAt then
+local function horizontalDistance(a, b)
+	local dx = a.X - b.X
+	local dz = a.Z - b.Z
+	return math.sqrt(dx * dx + dz * dz)
+end
+
+local function movePlayerToCorrectPad(player, state, correctIndex, runToken, questionId)
+	local pad = answerPads[correctIndex]
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not pad or not pad.Parent or not humanoid or not root or humanoid.Health <= 0 then
+		warn("[BrainQuizArena] AutoMoveFailed player=" .. player.Name .. " reason=missing_character_or_pad")
+		return
+	end
+
+	state.AutoMoving = true
+	state.AutoMoveQuestionId = questionId
+	state.AutoMoveAnswerIndex = correctIndex
+	state.AutoSolveAt = nil
+	sendActiveState(player, state, "AUTO FOUND ANSWER · MOVING")
+
+	local targetPosition = Vector3.new(
+		pad.Position.X,
+		pad.Position.Y + pad.Size.Y * 0.5 + 2.8,
+		pad.Position.Z
+	)
+	humanoid:MoveTo(targetPosition)
+
+	task.spawn(function()
+		local deadline = os.clock() + AUTO_MOVE_TIMEOUT
+		while os.clock() < deadline do
+			if not player.Parent or not state.Active or state.Token ~= runToken or state.QuestionId ~= questionId then
+				return
+			end
+			character = player.Character
+			root = character and character:FindFirstChild("HumanoidRootPart")
+			if not root then
+				return
+			end
+			if horizontalDistance(root.Position, pad.Position) <= math.max(4, pad.Size.X * 0.3) then
+				break
+			end
+			task.wait(0.1)
+		end
+
+		if not player.Parent or not state.Active or state.Token ~= runToken or state.QuestionId ~= questionId then
+			return
+		end
+
+		character = player.Character
+		root = character and character:FindFirstChild("HumanoidRootPart")
+		if not character or not root then
+			return
+		end
+		if horizontalDistance(root.Position, pad.Position) > math.max(5, pad.Size.X * 0.35) then
+			character:PivotTo(CFrame.new(targetPosition))
+		end
+
+		task.wait(0.15)
+		if state.Active and state.Token == runToken and state.QuestionId == questionId then
+			answerQuestion(player, correctIndex, true)
+		end
+	end)
+end
+
+scheduleAutoAttempt = function(player, state)
+	if not state.Active or not state.Question or not state.AutoSolveAt then
 		return
 	end
 	local runToken = state.Token
@@ -468,7 +541,7 @@ local function scheduleSmartSolve(player, state)
 	local delaySeconds = math.max(0, state.AutoSolveAt - Workspace:GetServerTimeNow())
 
 	task.delay(delaySeconds, function()
-		if not player.Parent or not state.Active then
+		if not player.Parent or not state.Active or state.AutoMoving then
 			return
 		end
 		if state.Token ~= runToken or state.QuestionId ~= questionId then
@@ -477,7 +550,24 @@ local function scheduleSmartSolve(player, state)
 		if Workspace:GetServerTimeNow() >= state.EndsAt then
 			return
 		end
-		answerQuestion(player, correctIndex, true)
+
+		local succeeded = state.AutoSolveGuaranteed or random:NextNumber() <= state.AutoSolveChance
+		print(
+			"[BrainQuizArena] AutoAttempt player=" .. player.Name
+				.. " IQ=" .. tostring(state.CurrentIQ)
+				.. " chance=" .. string.format("%.2f", state.AutoSolveChance)
+				.. " guaranteed=" .. tostring(state.AutoSolveGuaranteed)
+				.. " success=" .. tostring(succeeded)
+		)
+
+		if succeeded then
+			movePlayerToCorrectPad(player, state, correctIndex, runToken, questionId)
+			return
+		end
+
+		state.AutoSolveAt = math.min(state.EndsAt, Workspace:GetServerTimeNow() + state.AutoSolveDelay)
+		sendActiveState(player, state, "AUTO MISSED · RETRYING")
+		scheduleAutoAttempt(player, state)
 	end)
 end
 
@@ -493,6 +583,7 @@ local function selectDifficulty(player, difficultyName)
 		return
 	end
 	difficultyTouchAt[player.UserId] = now
+
 	local state = getState(player)
 	if state.Active then
 		firePopup(player, "QUIZ ACTIVE", "Difficulty can be changed before the next run")
@@ -520,7 +611,7 @@ local function startRun(player)
 	local state = getState(player)
 	local now = Workspace:GetServerTimeNow()
 	if state.Active then
-		firePopup(player, "QUIZ ACTIVE", "Answer the current question on A, B, or C")
+		firePopup(player, "QUIZ ACTIVE", "Auto is running; move manually to answer faster")
 		return
 	end
 	if now < state.CooldownUntil then
@@ -539,21 +630,20 @@ local function startRun(player)
 	state.LastAnswerAt = 0
 	prepareQuestion(player, state)
 
-	local feedback = state.AutoSolveDelay
-		and ("SMART SOLVE READY · " .. tostring(state.AutoSolveDelay) .. "s")
-		or "STEP ON A, B, OR C"
+	local chancePercent = math.floor(state.AutoSolveChance * 100 + 0.5)
+	local feedback = state.AutoSolveGuaranteed
+		and ("AUTO 100% · MOVES IN " .. tostring(state.AutoSolveDelay) .. "s")
+		or ("AUTO " .. tostring(chancePercent) .. "% · MANUAL IS FASTER")
 	sendActiveState(player, state, feedback)
-	scheduleSmartSolve(player, state)
-	firePopup(
-		player,
-		"BRAIN QUIZ · " .. difficulty.DisplayName,
-		"Every correct answer gives +1 Win"
-	)
+	scheduleAutoAttempt(player, state)
+	firePopup(player, "BRAIN QUIZ · " .. difficulty.DisplayName, "Auto is active · manual movement is optional")
 	print(
 		"[BrainQuizArena] Start player=" .. player.Name
 			.. " difficulty=" .. difficulty.DisplayName
 			.. " IQ=" .. tostring(state.CurrentIQ)
-			.. " autoDelay=" .. tostring(state.AutoSolveDelay or "manual")
+			.. " autoChance=" .. string.format("%.2f", state.AutoSolveChance)
+			.. " guaranteed=" .. tostring(state.AutoSolveGuaranteed)
+			.. " autoDelay=" .. tostring(state.AutoSolveDelay)
 	)
 
 	local token = state.Token
@@ -586,6 +676,9 @@ answerQuestion = function(player, answerIndex, autoSolved)
 	end
 
 	state.LastAnswerAt = now
+	state.AutoMoving = false
+	state.AutoMoveQuestionId = 0
+	state.AutoMoveAnswerIndex = 0
 	state.Attempts += 1
 	if autoSolved == true then
 		state.AutoSolvedCount += 1
@@ -624,12 +717,12 @@ answerQuestion = function(player, answerIndex, autoSolved)
 	prepareQuestion(player, state)
 	local feedback
 	if autoSolved == true then
-		feedback = "+1 WIN · SMART SOLVE!"
+		feedback = "+1 WIN · AUTO MOVED"
 	else
-		feedback = isCorrect and "+1 WIN · CORRECT!" or ("WRONG · -" .. tostring(WRONG_ANSWER_PENALTY_SECONDS) .. "s")
+		feedback = isCorrect and "+1 WIN · MANUAL" or ("WRONG · -" .. tostring(WRONG_ANSWER_PENALTY_SECONDS) .. "s")
 	end
 	sendActiveState(player, state, feedback)
-	scheduleSmartSolve(player, state)
+	scheduleAutoAttempt(player, state)
 end
 
 local function createPart(parent, name, size, position, color, material, canTouch)
@@ -693,6 +786,7 @@ local function installArena(map)
 	end
 
 	removeLegacyActivities(map)
+	table.clear(answerPads)
 	local scale = tonumber(map:GetAttribute("WorldScale")) or 2.5
 	local center = Vector3.new(48 * scale, 0, -34 * scale)
 
@@ -701,7 +795,9 @@ local function installArena(map)
 	arena:SetAttribute("QuestionsToFinish", QUESTIONS_TO_FINISH)
 	arena:SetAttribute("WinPerCorrect", WIN_PER_CORRECT)
 	arena:SetAttribute("DefaultDifficulty", "Normal")
-	arena:SetAttribute("SmartSolveUnlockIQ", 500)
+	arena:SetAttribute("AutoGuaranteedIQ", GUARANTEED_AUTO_IQ)
+	arena:SetAttribute("LowIQMinChance", LOW_IQ_MIN_CHANCE)
+	arena:SetAttribute("LowIQMaxChance", LOW_IQ_MAX_CHANCE)
 	arena.Parent = map
 
 	local platform = createPart(
@@ -743,11 +839,17 @@ local function installArena(map)
 			Enum.Material.Neon,
 			true
 		)
+		answerPads[index] = pad
 		addTopLabel(pad, answerNames[index])
 		pad.Touched:Connect(function(hit)
 			local player = getPlayerFromHit(hit)
 			if player then
-				answerQuestion(player, index, false)
+				local state = getState(player)
+				local autoMoved = state.Active
+					and state.AutoMoving
+					and state.AutoMoveQuestionId == state.QuestionId
+					and state.AutoMoveAnswerIndex == index
+				answerQuestion(player, index, autoMoved)
 			end
 		end)
 	end
@@ -761,7 +863,7 @@ local function installArena(map)
 		Enum.Material.Neon,
 		true
 	)
-	addTopLabel(startPad, "START\n+1 WIN EACH")
+	addTopLabel(startPad, "START\nAUTO ON")
 	startPad.Touched:Connect(function(hit)
 		local player = getPlayerFromHit(hit)
 		if player then
@@ -802,8 +904,18 @@ local function installArena(map)
 	)
 	board.CanCollide = false
 	board.CanQuery = false
-	addText(board, Enum.NormalId.Front, "BRAIN QUIZ ARENA\nEVERY CORRECT = +1 WIN\nEASY / NORMAL / HARD\nIQ 500+ SMART SOLVE", COLORS.BoardText)
-	addText(board, Enum.NormalId.Back, "CHOOSE DIFFICULTY\nSTEP ON START\nANSWER ON A / B / C", COLORS.BoardText)
+	addText(
+		board,
+		Enum.NormalId.Front,
+		"BRAIN QUIZ ARENA\nAUTO IS DEFAULT\nIQ 500+ = 100%\nLOW IQ = CHANCE\nEVERY CORRECT = +1 WIN",
+		COLORS.BoardText
+	)
+	addText(
+		board,
+		Enum.NormalId.Back,
+		"CHOOSE DIFFICULTY\nSTEP ON START\nAUTO MOVES TO ANSWER\nMANUAL PLAY IS OPTIONAL",
+		COLORS.BoardText
+	)
 
 	for _, xOffset in ipairs({ -14 * scale, 14 * scale }) do
 		local post = createPart(
@@ -821,7 +933,10 @@ local function installArena(map)
 
 	installedMap = map
 	map:SetAttribute("BrainQuizArenaInstalled", true)
-	print("[BrainQuizArena] Installed goal=5 winPerCorrect=1 difficulties=Easy75/Normal60/Hard45 smartSolveIQ=500/2000/10000/35000")
+	print(
+		"[BrainQuizArena] Installed goal=5 winPerCorrect=1 autoDefault=true guaranteedIQ=500"
+			.. " lowChance=15-90 movement=HumanoidMoveTo difficulties=Easy75/Normal60/Hard45"
+	)
 end
 
 local function scheduleInstall(map)
