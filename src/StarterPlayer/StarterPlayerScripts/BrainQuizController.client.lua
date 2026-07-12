@@ -1,5 +1,5 @@
 -- StarterPlayerScripts/BrainQuizController.client.lua
--- Large, responsive per-player quiz panel inside the existing BrainRNG ScreenGui.
+-- Large quiz panel for auto-first Brain Quiz play.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -138,10 +138,18 @@ local function showResult(titleText, questionText, feedbackText, strokeColor, du
 	scheduleHide(duration or 3.5)
 end
 
+local function getChancePercent(payload)
+	if payload.AutoSolveGuaranteed == true then
+		return 100
+	end
+	local chance = math.clamp(tonumber(payload.AutoSolveChance) or 0, 0, 1)
+	return math.floor(chance * 100 + 0.5)
+end
+
 local function renderActive(payload)
 	hideToken += 1
 	activePayload = payload
-	activePayload.BaseFeedback = tostring(payload.Feedback or "STEP ON A, B, OR C")
+	activePayload.BaseFeedback = tostring(payload.Feedback or "AUTO IS RUNNING")
 	panel.Visible = true
 	stroke.Color = Color3.fromRGB(100, 170, 255)
 	question.Text = tostring(payload.Prompt or "QUESTION")
@@ -152,14 +160,15 @@ local function renderActive(payload)
 		.. "      C  " .. tostring(options[3] or "?")
 
 	local winsEarned = tonumber(payload.WinsEarned) or 0
-	local autoDelay = tonumber(payload.AutoSolveDelay)
-	if autoDelay then
-		feedback.Text = activePayload.BaseFeedback
-			.. " · +" .. tostring(winsEarned) .. " WINS · AUTO " .. tostring(autoDelay) .. "s"
+	local chancePercent = getChancePercent(payload)
+	local autoDelay = tonumber(payload.AutoSolveDelay) or 8
+	if payload.AutoMoving == true then
+		feedback.Text = "AUTO FOUND ANSWER · MOVING CHARACTER · +" .. tostring(winsEarned) .. " WINS"
 	else
-		local requiredIQ = tonumber(payload.AutoSolveRequiredIQ) or 500
 		feedback.Text = activePayload.BaseFeedback
-			.. " · +" .. tostring(winsEarned) .. " WINS · AUTO AT " .. tostring(requiredIQ) .. " IQ"
+			.. " · AUTO " .. tostring(chancePercent) .. "%"
+			.. " · " .. tostring(autoDelay) .. "s"
+			.. " · +" .. tostring(winsEarned) .. " WINS"
 	end
 end
 
@@ -175,7 +184,7 @@ BrainQuizState.OnClientEvent:Connect(function(payload)
 		showResult(
 			"DIFFICULTY SELECTED",
 			tostring(payload.Difficulty or "NORMAL"),
-			tostring(payload.TimeLimit or 60) .. " SECONDS · +1 WIN PER CORRECT",
+			tostring(payload.TimeLimit or 60) .. " SECONDS · AUTO IS DEFAULT",
 			Color3.fromRGB(255, 205, 70),
 			2.5
 		)
@@ -184,7 +193,7 @@ BrainQuizState.OnClientEvent:Connect(function(payload)
 		showResult(
 			"QUIZ COMPLETE · " .. tostring(payload.Difficulty or "NORMAL"),
 			"+" .. tostring(winsEarned) .. " WINS",
-			"Every correct answer was rewarded",
+			"Auto and manual answers were both rewarded",
 			Color3.fromRGB(80, 225, 135),
 			4
 		)
@@ -214,18 +223,21 @@ RunService.RenderStepped:Connect(function()
 	local score = tonumber(activePayload.Score) or 0
 	local goal = tonumber(activePayload.Goal) or 5
 	local difficulty = tostring(activePayload.Difficulty or "NORMAL")
-	local smartText = tonumber(activePayload.AutoSolveDelay) and " · SMART" or ""
+	local chancePercent = getChancePercent(activePayload)
 	header.Text = "BRAIN QUIZ · " .. difficulty
 		.. "   " .. tostring(score) .. "/" .. tostring(goal)
-		.. "   " .. tostring(math.ceil(remaining)) .. "s" .. smartText
+		.. "   " .. tostring(math.ceil(remaining)) .. "s"
+		.. "   AUTO " .. tostring(chancePercent) .. "%"
 
 	local winsEarned = tonumber(activePayload.WinsEarned) or 0
 	local autoSolveAt = tonumber(activePayload.AutoSolveAt)
-	if autoSolveAt and remaining > 0 then
+	if activePayload.AutoMoving == true then
+		feedback.Text = "AUTO FOUND ANSWER · MOVING CHARACTER · +" .. tostring(winsEarned) .. " WINS"
+	elseif autoSolveAt and remaining > 0 then
 		local autoRemaining = math.max(0, autoSolveAt - now)
-		feedback.Text = tostring(activePayload.BaseFeedback or "SMART SOLVE")
+		feedback.Text = tostring(activePayload.BaseFeedback or "AUTO IS RUNNING")
+			.. " · TRY IN " .. tostring(math.ceil(autoRemaining)) .. "s"
 			.. " · +" .. tostring(winsEarned) .. " WINS"
-			.. " · AUTO " .. tostring(math.ceil(autoRemaining)) .. "s"
 	end
 
 	if remaining <= 0 then
@@ -233,4 +245,7 @@ RunService.RenderStepped:Connect(function()
 	end
 end)
 
-print("[BrainQuizUI] Ready largeText=true difficulty=true rewardPerCorrect=1 smartSolve=true parent=" .. brainGui:GetFullName())
+print(
+	"[BrainQuizUI] Ready largeText=true difficulty=true rewardPerCorrect=1"
+		.. " autoDefault=true chanceDisplay=true characterMove=true parent=" .. brainGui:GetFullName()
+)
