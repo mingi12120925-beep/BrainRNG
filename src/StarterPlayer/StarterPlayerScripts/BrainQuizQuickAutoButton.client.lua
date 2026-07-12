@@ -7,6 +7,18 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
+local function enumFont(name, fallback)
+	local ok, value = pcall(function()
+		return Enum.Font[name]
+	end)
+	if ok and value then
+		return value
+	end
+	return fallback
+end
+
+local BUTTON_FONT = enumFont("BuilderSansBold", Enum.Font.GothamBold)
+
 local oldGui = playerGui:FindFirstChild("BrainQuizAutoUI")
 if oldGui then
 	oldGui:Destroy()
@@ -41,7 +53,7 @@ button.Size = UDim2.fromOffset(210, 54)
 button.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 button.BorderSizePixel = 0
 button.AutoButtonColor = true
-button.Font = Enum.Font.BuilderSansBold
+button.Font = BUTTON_FONT
 button.Text = "QUIZ AUTO: ON"
 button.TextColor3 = Color3.fromRGB(18, 22, 28)
 button.TextSize = 21
