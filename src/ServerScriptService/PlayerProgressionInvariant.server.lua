@@ -6,7 +6,7 @@
 
 local Players = game:GetService("Players")
 
-local FIXED_WALK_SPEED = 22
+local FIXED_WALK_SPEED = 28
 local FIXED_JUMP_POWER = 50
 local FIXED_JUMP_HEIGHT = 7.2
 local APPEARANCE_WAIT_SECONDS = 8
