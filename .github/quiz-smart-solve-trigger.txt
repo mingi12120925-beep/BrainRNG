@@ -1,1 +1,0 @@
-Trigger the already-registered one-time quiz readability and Smart Solve workflow.
