@@ -1,0 +1,49 @@
+name: Fix brain quiz once
+
+on:
+  push:
+    branches:
+      - agent/classic-simulator-lobby
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Add one-time brain quiz safety fix workflow'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/classic-simulator-lobby
+          fetch-depth: 0
+
+      - name: Apply exact quiz fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          server_path = Path('src/ServerScriptService/BrainQuizArena.server.lua')
+          server = server_path.read_text(encoding='utf-8')
+          old_server = '''\tlocal state = getState(player)\n\tlocal now = Workspace:GetServerTimeNow()\n\tif now < state.CooldownUntil then'''
+          new_server = '''\tlocal state = getState(player)\n\tlocal now = Workspace:GetServerTimeNow()\n\tif state.Active then\n\t\tfirePopup(player, "QUIZ ACTIVE", "Answer the current question on A, B, or C")\n\t\treturn\n\tend\n\tif now < state.CooldownUntil then'''
+          if server.count(old_server) != 1:
+              raise SystemExit('server start block mismatch')
+          server_path.write_text(server.replace(old_server, new_server, 1), encoding='utf-8')
+
+          client_path = Path('src/StarterPlayer/StarterPlayerScripts/BrainQuizController.client.lua')
+          client = client_path.read_text(encoding='utf-8')
+          old_client = '''local ReplicatedStorage = game:GetService("ReplicatedStorage")\nlocal RunService = game:GetService("RunService")'''
+          new_client = '''local ReplicatedStorage = game:GetService("ReplicatedStorage")\nlocal RunService = game:GetService("RunService")\nlocal Workspace = game:GetService("Workspace")'''
+          if client.count(old_client) != 1:
+              raise SystemExit('client service block mismatch')
+          client_path.write_text(client.replace(old_client, new_client, 1), encoding='utf-8')
+
+      - name: Commit quiz fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/ServerScriptService/BrainQuizArena.server.lua src/StarterPlayer/StarterPlayerScripts/BrainQuizController.client.lua
+          git diff --cached --check
+          git commit -m "Fix brain quiz start and timer safety [skip ci]"
+          git push origin HEAD:agent/classic-simulator-lobby
