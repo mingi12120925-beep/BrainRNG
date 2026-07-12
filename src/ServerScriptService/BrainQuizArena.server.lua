@@ -1,6 +1,6 @@
 -- ServerScriptService/BrainQuizArena.server.lua
--- Brain Quiz Arena: answer five randomized questions on physical A/B/C pads.
--- IQ unlocks server-authoritative Smart Solve without changing player speed or avatar size.
+-- Brain Quiz Arena: answer randomized questions on physical A/B/C pads.
+-- Every correct answer awards +1 Win, whether solved manually or by Smart Solve.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -36,13 +36,28 @@ local UpdateStats = getOrCreateRemoteEvent("UpdateStats")
 local PopupEvent = getOrCreateRemoteEvent("PopupEvent")
 
 local ARENA_NAME = "BrainQuizArena"
-local QUESTIONS_TO_WIN = 5
-local TIME_LIMIT_SECONDS = 60
+local QUESTIONS_TO_FINISH = 5
+local WIN_PER_CORRECT = 1
 local WRONG_ANSWER_PENALTY_SECONDS = 5
 local COMPLETION_COOLDOWN_SECONDS = 60
-local NORMAL_REWARD_WINS = 2
-local PERFECT_REWARD_WINS = 3
 local ANSWER_DEBOUNCE_SECONDS = 0.65
+
+local DIFFICULTIES = {
+	Easy = {
+		DisplayName = "EASY",
+		TimeLimit = 75,
+	},
+	Normal = {
+		DisplayName = "NORMAL",
+		TimeLimit = 60,
+	},
+	Hard = {
+		DisplayName = "HARD",
+		TimeLimit = 45,
+	},
+}
+
+local DIFFICULTY_ORDER = { "Easy", "Normal", "Hard" }
 
 local AUTO_SOLVE_TIERS = {
 	{ RequiredIQ = 35000, Delay = 1 },
@@ -58,6 +73,9 @@ local COLORS = {
 	A = Color3.fromRGB(255, 100, 110),
 	B = Color3.fromRGB(70, 165, 255),
 	C = Color3.fromRGB(255, 205, 70),
+	Easy = Color3.fromRGB(85, 220, 130),
+	Normal = Color3.fromRGB(255, 205, 70),
+	Hard = Color3.fromRGB(255, 95, 105),
 	Board = Color3.fromRGB(31, 43, 65),
 	BoardText = Color3.fromRGB(255, 255, 255),
 	Post = Color3.fromRGB(92, 72, 52),
@@ -65,6 +83,7 @@ local COLORS = {
 
 local random = Random.new()
 local states = {}
+local saveStates = {}
 local installedMap = nil
 local answerQuestion
 
@@ -85,8 +104,10 @@ local function getState(player)
 	if not state then
 		state = {
 			Active = false,
+			Difficulty = "Normal",
 			Score = 0,
 			Attempts = 0,
+			WinsEarned = 0,
 			AutoSolvedCount = 0,
 			EndsAt = 0,
 			CooldownUntil = 0,
@@ -104,10 +125,15 @@ local function getState(player)
 	return state
 end
 
+local function getDifficultyConfig(name)
+	return DIFFICULTIES[name] or DIFFICULTIES.Normal
+end
+
 local function resetActiveState(state)
 	state.Active = false
 	state.Score = 0
 	state.Attempts = 0
+	state.WinsEarned = 0
 	state.AutoSolvedCount = 0
 	state.EndsAt = 0
 	state.Question = nil
@@ -159,52 +185,7 @@ local function buildNumberChoices(correct, spread)
 	return display, correctIndex
 end
 
-local function buildQuestion()
-	local questionType = random:NextInteger(1, 6)
-	local promptText
-	local correct
-	local spread = 10
-
-	if questionType == 1 then
-		local a = random:NextInteger(6, 35)
-		local b = random:NextInteger(4, 28)
-		correct = a + b
-		promptText = tostring(a) .. " + " .. tostring(b) .. " = ?"
-		spread = 14
-	elseif questionType == 2 then
-		local a = random:NextInteger(20, 60)
-		local b = random:NextInteger(4, a - 3)
-		correct = a - b
-		promptText = tostring(a) .. " - " .. tostring(b) .. " = ?"
-		spread = 12
-	elseif questionType == 3 then
-		local a = random:NextInteger(2, 12)
-		local b = random:NextInteger(2, 12)
-		correct = a * b
-		promptText = tostring(a) .. " × " .. tostring(b) .. " = ?"
-		spread = 18
-	elseif questionType == 4 then
-		local start = random:NextInteger(2, 18)
-		local step = random:NextInteger(2, 8)
-		correct = start + step * 3
-		promptText = "NEXT: " .. tostring(start) .. ", " .. tostring(start + step) .. ", " .. tostring(start + step * 2) .. ", ?"
-		spread = 10
-	elseif questionType == 5 then
-		local start = random:NextInteger(1, 6)
-		correct = start * 8
-		promptText = "NEXT: " .. tostring(start) .. ", " .. tostring(start * 2) .. ", " .. tostring(start * 4) .. ", ?"
-		spread = 18
-	else
-		local a = random:NextInteger(10, 70)
-		local b = random:NextInteger(10, 70)
-		while b == a do
-			b = random:NextInteger(10, 70)
-		end
-		correct = math.max(a, b)
-		promptText = "WHICH IS LARGER: " .. tostring(a) .. " OR " .. tostring(b) .. "?"
-		spread = 15
-	end
-
+local function makeQuestion(promptText, correct, spread)
 	local options, correctIndex = buildNumberChoices(correct, spread)
 	return {
 		Prompt = promptText,
@@ -213,8 +194,123 @@ local function buildQuestion()
 	}
 end
 
+local function buildEasyQuestion()
+	local questionType = random:NextInteger(1, 4)
+	if questionType == 1 then
+		local a = random:NextInteger(1, 20)
+		local b = random:NextInteger(1, 15)
+		return makeQuestion(tostring(a) .. " + " .. tostring(b) .. " = ?", a + b, 8)
+	elseif questionType == 2 then
+		local a = random:NextInteger(10, 35)
+		local b = random:NextInteger(1, a - 1)
+		return makeQuestion(tostring(a) .. " - " .. tostring(b) .. " = ?", a - b, 8)
+	elseif questionType == 3 then
+		local a = random:NextInteger(1, 50)
+		local b = random:NextInteger(1, 50)
+		while b == a do
+			b = random:NextInteger(1, 50)
+		end
+		return makeQuestion("WHICH IS LARGER: " .. tostring(a) .. " OR " .. tostring(b) .. "?", math.max(a, b), 12)
+	else
+		local start = random:NextInteger(1, 12)
+		local step = random:NextInteger(1, 5)
+		local correct = start + step * 3
+		return makeQuestion(
+			"NEXT: " .. tostring(start) .. ", " .. tostring(start + step) .. ", " .. tostring(start + step * 2) .. ", ?",
+			correct,
+			8
+		)
+	end
+end
+
+local function buildNormalQuestion()
+	local questionType = random:NextInteger(1, 6)
+	if questionType == 1 then
+		local a = random:NextInteger(6, 35)
+		local b = random:NextInteger(4, 28)
+		return makeQuestion(tostring(a) .. " + " .. tostring(b) .. " = ?", a + b, 14)
+	elseif questionType == 2 then
+		local a = random:NextInteger(20, 60)
+		local b = random:NextInteger(4, a - 3)
+		return makeQuestion(tostring(a) .. " - " .. tostring(b) .. " = ?", a - b, 12)
+	elseif questionType == 3 then
+		local a = random:NextInteger(2, 12)
+		local b = random:NextInteger(2, 12)
+		return makeQuestion(tostring(a) .. " × " .. tostring(b) .. " = ?", a * b, 18)
+	elseif questionType == 4 then
+		local start = random:NextInteger(2, 18)
+		local step = random:NextInteger(2, 8)
+		local correct = start + step * 3
+		return makeQuestion(
+			"NEXT: " .. tostring(start) .. ", " .. tostring(start + step) .. ", " .. tostring(start + step * 2) .. ", ?",
+			correct,
+			10
+		)
+	elseif questionType == 5 then
+		local start = random:NextInteger(1, 6)
+		return makeQuestion(
+			"NEXT: " .. tostring(start) .. ", " .. tostring(start * 2) .. ", " .. tostring(start * 4) .. ", ?",
+			start * 8,
+			18
+		)
+	else
+		local a = random:NextInteger(10, 70)
+		local b = random:NextInteger(10, 70)
+		while b == a do
+			b = random:NextInteger(10, 70)
+		end
+		return makeQuestion("WHICH IS LARGER: " .. tostring(a) .. " OR " .. tostring(b) .. "?", math.max(a, b), 15)
+	end
+end
+
+local function buildHardQuestion()
+	local questionType = random:NextInteger(1, 6)
+	if questionType == 1 then
+		local a = random:NextInteger(35, 99)
+		local b = random:NextInteger(25, 89)
+		return makeQuestion(tostring(a) .. " + " .. tostring(b) .. " = ?", a + b, 24)
+	elseif questionType == 2 then
+		local a = random:NextInteger(70, 160)
+		local b = random:NextInteger(15, 69)
+		return makeQuestion(tostring(a) .. " - " .. tostring(b) .. " = ?", a - b, 22)
+	elseif questionType == 3 then
+		local a = random:NextInteger(6, 15)
+		local b = random:NextInteger(6, 15)
+		return makeQuestion(tostring(a) .. " × " .. tostring(b) .. " = ?", a * b, 30)
+	elseif questionType == 4 then
+		local divisor = random:NextInteger(3, 12)
+		local quotient = random:NextInteger(4, 15)
+		local dividend = divisor * quotient
+		return makeQuestion(tostring(dividend) .. " ÷ " .. tostring(divisor) .. " = ?", quotient, 8)
+	elseif questionType == 5 then
+		local a = random:NextInteger(4, 12)
+		local b = random:NextInteger(4, 12)
+		local c = random:NextInteger(5, 30)
+		return makeQuestion(tostring(a) .. " × " .. tostring(b) .. " + " .. tostring(c) .. " = ?", a * b + c, 28)
+	else
+		local start = random:NextInteger(10, 35)
+		local step = random:NextInteger(9, 18)
+		local correct = start + step * 3
+		return makeQuestion(
+			"NEXT: " .. tostring(start) .. ", " .. tostring(start + step) .. ", " .. tostring(start + step * 2) .. ", ?",
+			correct,
+			20
+		)
+	end
+end
+
+local function buildQuestion(difficultyName)
+	if difficultyName == "Easy" then
+		return buildEasyQuestion()
+	end
+	if difficultyName == "Hard" then
+		return buildHardQuestion()
+	end
+	return buildNormalQuestion()
+end
+
 local function prepareQuestion(player, state)
-	state.Question = buildQuestion()
+	state.Question = buildQuestion(state.Difficulty)
 	state.QuestionId += 1
 	state.AutoSolveDelay, state.AutoSolveRequiredIQ, state.CurrentIQ = getAutoSolveInfo(player)
 	if state.AutoSolveDelay then
@@ -228,13 +324,16 @@ local function sendActiveState(player, state, feedback)
 	if not player.Parent or not state.Active or not state.Question then
 		return
 	end
+	local difficulty = getDifficultyConfig(state.Difficulty)
 	BrainQuizState:FireClient(player, {
 		Phase = "Active",
+		Difficulty = difficulty.DisplayName,
 		Prompt = state.Question.Prompt,
 		Options = state.Question.Options,
 		Score = state.Score,
-		Goal = QUESTIONS_TO_WIN,
+		Goal = QUESTIONS_TO_FINISH,
 		Attempts = state.Attempts,
+		WinsEarned = state.WinsEarned,
 		EndsAt = state.EndsAt,
 		WrongPenalty = WRONG_ANSWER_PENALTY_SECONDS,
 		Feedback = feedback,
@@ -245,25 +344,50 @@ local function sendActiveState(player, state, feedback)
 	})
 end
 
-local function saveWins(player)
+local function queueWinsSave(player)
+	local userId = player.UserId
+	local saveState = saveStates[userId]
+	if not saveState then
+		saveState = { Pending = false, Running = false }
+		saveStates[userId] = saveState
+	end
+	saveState.Pending = true
+	if saveState.Running then
+		return
+	end
+
+	saveState.Running = true
 	task.spawn(function()
-		for attempt = 1, 2 do
-			if not player.Parent or not DataManager.IsLoaded(player) then
-				return
+		while player.Parent and saveState.Pending do
+			saveState.Pending = false
+			task.wait(0.6)
+
+			local saved = false
+			local lastError = nil
+			for attempt = 1, 2 do
+				if not player.Parent or not DataManager.IsLoaded(player) then
+					break
+				end
+				local ok, result = pcall(function()
+					return DataManager.SaveProfile(player, false, { Reason = "BrainQuizCorrect" })
+				end)
+				if ok and result then
+					saved = true
+					break
+				end
+				lastError = result
+				if attempt == 1 then
+					task.wait(1)
+				end
 			end
-			local ok, savedOrError = pcall(function()
-				return DataManager.SaveProfile(player, false, { Reason = "BrainQuizWin" })
-			end)
-			if ok and savedOrError then
+
+			if saved then
 				print("[BrainQuizArena] SaveOK player=" .. player.Name .. " wins=" .. tostring(GameLogic.GetWins(player)))
-				return
-			end
-			if attempt == 1 then
-				task.wait(1)
 			else
-				warn("[BrainQuizArena] SaveFailed player=" .. player.Name .. " error=" .. tostring(savedOrError))
+				warn("[BrainQuizArena] SaveFailed player=" .. player.Name .. " error=" .. tostring(lastError))
 			end
 		end
+		saveState.Running = false
 	end)
 end
 
@@ -272,34 +396,46 @@ local function expireRun(player, state, reason)
 		return
 	end
 	local score = state.Score
+	local winsEarned = state.WinsEarned
+	local difficulty = getDifficultyConfig(state.Difficulty).DisplayName
 	state.Token += 1
 	resetActiveState(state)
 	BrainQuizState:FireClient(player, {
 		Phase = "Expired",
+		Difficulty = difficulty,
 		Score = score,
-		Goal = QUESTIONS_TO_WIN,
+		Goal = QUESTIONS_TO_FINISH,
+		WinsEarned = winsEarned,
 		Message = reason or "TIME UP",
 	})
-	firePopup(player, "QUIZ FAILED", "Score " .. tostring(score) .. "/" .. tostring(QUESTIONS_TO_WIN) .. " · Step on START to retry")
-	print("[BrainQuizArena] Expired player=" .. player.Name .. " score=" .. tostring(score))
+	firePopup(
+		player,
+		"QUIZ ENDED",
+		"Score " .. tostring(score) .. "/" .. tostring(QUESTIONS_TO_FINISH) .. " · +" .. tostring(winsEarned) .. " Wins kept"
+	)
+	print(
+		"[BrainQuizArena] Expired player=" .. player.Name
+			.. " difficulty=" .. difficulty
+			.. " score=" .. tostring(score)
+			.. " winsEarned=" .. tostring(winsEarned)
+	)
 end
 
 local function completeRun(player, state)
 	local attempts = state.Attempts
 	local autoSolvedCount = state.AutoSolvedCount
-	local perfect = attempts == QUESTIONS_TO_WIN and autoSolvedCount == 0
-	local rewardWins = perfect and PERFECT_REWARD_WINS or NORMAL_REWARD_WINS
-	local elapsed = math.max(0, TIME_LIMIT_SECONDS - math.max(0, state.EndsAt - Workspace:GetServerTimeNow()))
+	local winsEarned = state.WinsEarned
+	local difficulty = getDifficultyConfig(state.Difficulty).DisplayName
+	local timeLimit = getDifficultyConfig(state.Difficulty).TimeLimit
+	local elapsed = math.max(0, timeLimit - math.max(0, state.EndsAt - Workspace:GetServerTimeNow()))
 
 	state.Token += 1
 	resetActiveState(state)
 	state.CooldownUntil = Workspace:GetServerTimeNow() + COMPLETION_COOLDOWN_SECONDS
-	GameLogic.AddWins(player, rewardWins)
-	UpdateStats:FireClient(player, { Wins = GameLogic.GetWins(player) })
 	BrainQuizState:FireClient(player, {
 		Phase = "Complete",
-		RewardWins = rewardWins,
-		Perfect = perfect,
+		Difficulty = difficulty,
+		WinsEarned = winsEarned,
 		Attempts = attempts,
 		AutoSolvedCount = autoSolvedCount,
 		Elapsed = elapsed,
@@ -307,15 +443,16 @@ local function completeRun(player, state)
 	})
 	firePopup(
 		player,
-		perfect and "MANUAL PERFECT!" or (autoSolvedCount > 0 and "SMART SOLVE COMPLETE!" or "QUIZ COMPLETE!"),
-		"+" .. tostring(rewardWins) .. " Wins · " .. string.format("%.1fs", elapsed)
+		"QUIZ COMPLETE!",
+		"+" .. tostring(winsEarned) .. " Wins · " .. string.format("%.1fs", elapsed)
 	)
-	saveWins(player)
+	queueWinsSave(player)
 	print(
 		"[BrainQuizArena] Complete player=" .. player.Name
+			.. " difficulty=" .. difficulty
 			.. " attempts=" .. tostring(attempts)
 			.. " autoSolved=" .. tostring(autoSolvedCount)
-			.. " rewardWins=" .. tostring(rewardWins)
+			.. " winsEarned=" .. tostring(winsEarned)
 			.. " totalWins=" .. tostring(GameLogic.GetWins(player))
 	)
 end
@@ -343,6 +480,26 @@ local function scheduleSmartSolve(player, state)
 	end)
 end
 
+local function selectDifficulty(player, difficultyName)
+	local config = DIFFICULTIES[difficultyName]
+	if not config then
+		return
+	end
+	local state = getState(player)
+	if state.Active then
+		firePopup(player, "QUIZ ACTIVE", "Difficulty can be changed before the next run")
+		return
+	end
+	state.Difficulty = difficultyName
+	BrainQuizState:FireClient(player, {
+		Phase = "Difficulty",
+		Difficulty = config.DisplayName,
+		TimeLimit = config.TimeLimit,
+	})
+	firePopup(player, "DIFFICULTY: " .. config.DisplayName, tostring(config.TimeLimit) .. " seconds")
+	print("[BrainQuizArena] Difficulty player=" .. player.Name .. " selected=" .. config.DisplayName)
+end
+
 local function startRun(player)
 	if not DataManager.IsLoaded(player) then
 		firePopup(player, "PLEASE WAIT", "Data is still loading")
@@ -363,12 +520,14 @@ local function startRun(player)
 		return
 	end
 
+	local difficulty = getDifficultyConfig(state.Difficulty)
 	state.Token += 1
 	state.Active = true
 	state.Score = 0
 	state.Attempts = 0
+	state.WinsEarned = 0
 	state.AutoSolvedCount = 0
-	state.EndsAt = now + TIME_LIMIT_SECONDS
+	state.EndsAt = now + difficulty.TimeLimit
 	state.LastAnswerAt = 0
 	prepareQuestion(player, state)
 
@@ -379,11 +538,12 @@ local function startRun(player)
 	scheduleSmartSolve(player, state)
 	firePopup(
 		player,
-		"BRAIN QUIZ START",
-		state.AutoSolveDelay and "Your IQ can auto-solve each question" or "Get 5 correct answers before time runs out"
+		"BRAIN QUIZ · " .. difficulty.DisplayName,
+		"Every correct answer gives +1 Win"
 	)
 	print(
 		"[BrainQuizArena] Start player=" .. player.Name
+			.. " difficulty=" .. difficulty.DisplayName
 			.. " IQ=" .. tostring(state.CurrentIQ)
 			.. " autoDelay=" .. tostring(state.AutoSolveDelay or "manual")
 	)
@@ -426,19 +586,25 @@ answerQuestion = function(player, answerIndex, autoSolved)
 	local isCorrect = answerIndex == state.Question.CorrectIndex
 	if isCorrect then
 		state.Score += 1
+		state.WinsEarned += WIN_PER_CORRECT
+		GameLogic.AddWins(player, WIN_PER_CORRECT)
+		UpdateStats:FireClient(player, { Wins = GameLogic.GetWins(player) })
+		queueWinsSave(player)
 	else
 		state.EndsAt -= WRONG_ANSWER_PENALTY_SECONDS
 	end
 
 	print(
 		"[BrainQuizArena] Answer player=" .. player.Name
+			.. " difficulty=" .. getDifficultyConfig(state.Difficulty).DisplayName
 			.. " correct=" .. tostring(isCorrect)
 			.. " auto=" .. tostring(autoSolved == true)
 			.. " score=" .. tostring(state.Score)
-			.. " attempts=" .. tostring(state.Attempts)
+			.. " winsEarned=" .. tostring(state.WinsEarned)
+			.. " totalWins=" .. tostring(GameLogic.GetWins(player))
 	)
 
-	if state.Score >= QUESTIONS_TO_WIN then
+	if state.Score >= QUESTIONS_TO_FINISH then
 		completeRun(player, state)
 		return
 	end
@@ -450,9 +616,9 @@ answerQuestion = function(player, answerIndex, autoSolved)
 	prepareQuestion(player, state)
 	local feedback
 	if autoSolved == true then
-		feedback = "SMART SOLVE!"
+		feedback = "+1 WIN · SMART SOLVE!"
 	else
-		feedback = isCorrect and "CORRECT!" or ("WRONG · -" .. tostring(WRONG_ANSWER_PENALTY_SECONDS) .. "s")
+		feedback = isCorrect and "+1 WIN · CORRECT!" or ("WRONG · -" .. tostring(WRONG_ANSWER_PENALTY_SECONDS) .. "s")
 	end
 	sendActiveState(player, state, feedback)
 	scheduleSmartSolve(player, state)
@@ -524,17 +690,16 @@ local function installArena(map)
 
 	local arena = Instance.new("Model")
 	arena.Name = ARENA_NAME
-	arena:SetAttribute("QuestionsToWin", QUESTIONS_TO_WIN)
-	arena:SetAttribute("TimeLimitSeconds", TIME_LIMIT_SECONDS)
-	arena:SetAttribute("NormalRewardWins", NORMAL_REWARD_WINS)
-	arena:SetAttribute("PerfectRewardWins", PERFECT_REWARD_WINS)
+	arena:SetAttribute("QuestionsToFinish", QUESTIONS_TO_FINISH)
+	arena:SetAttribute("WinPerCorrect", WIN_PER_CORRECT)
+	arena:SetAttribute("DefaultDifficulty", "Normal")
 	arena:SetAttribute("SmartSolveUnlockIQ", 500)
 	arena.Parent = map
 
 	local platform = createPart(
 		arena,
 		"ArenaPlatform",
-		Vector3.new(36 * scale, 1, 28 * scale),
+		Vector3.new(38 * scale, 1, 38 * scale),
 		center + Vector3.new(0, 0.5, 0),
 		COLORS.Platform,
 		Enum.Material.Concrete,
@@ -545,7 +710,7 @@ local function installArena(map)
 	local trim = createPart(
 		arena,
 		"ArenaTrim",
-		Vector3.new(37 * scale, 0.3, 29 * scale),
+		Vector3.new(39 * scale, 0.3, 39 * scale),
 		center + Vector3.new(0, 1.05, 0),
 		COLORS.PlatformTrim,
 		Enum.Material.Neon,
@@ -565,7 +730,7 @@ local function installArena(map)
 			arena,
 			"AnswerPad_" .. answerNames[index],
 			padSize,
-			Vector3.new(center.X + answerOffsets[index], padY, center.Z),
+			Vector3.new(center.X + answerOffsets[index], padY, center.Z + 3 * scale),
 			answerColors[index],
 			Enum.Material.Neon,
 			true
@@ -582,13 +747,13 @@ local function installArena(map)
 	local startPad = createPart(
 		arena,
 		"QuizStartPad",
-		Vector3.new(12 * scale, 0.8, 5.5 * scale),
-		Vector3.new(center.X, padY, center.Z - 10 * scale),
+		Vector3.new(12 * scale, 0.8, 5 * scale),
+		Vector3.new(center.X, padY, center.Z - 5 * scale),
 		COLORS.Start,
 		Enum.Material.Neon,
 		true
 	)
-	addTopLabel(startPad, "START\n2-3 WINS")
+	addTopLabel(startPad, "START\n+1 WIN EACH")
 	startPad.Touched:Connect(function(hit)
 		local player = getPlayerFromHit(hit)
 		if player then
@@ -596,7 +761,28 @@ local function installArena(map)
 		end
 	end)
 
-	local boardPosition = Vector3.new(center.X, 11.5, center.Z + 11 * scale)
+	local difficultyXOffsets = { -10 * scale, 0, 10 * scale }
+	for index, difficultyName in ipairs(DIFFICULTY_ORDER) do
+		local config = DIFFICULTIES[difficultyName]
+		local pad = createPart(
+			arena,
+			"DifficultyPad_" .. difficultyName,
+			Vector3.new(6 * scale, 0.65, 4.5 * scale),
+			Vector3.new(center.X + difficultyXOffsets[index], 1.48, center.Z - 13 * scale),
+			COLORS[difficultyName],
+			Enum.Material.Neon,
+			true
+		)
+		addTopLabel(pad, config.DisplayName .. "\n" .. tostring(config.TimeLimit) .. "s")
+		pad.Touched:Connect(function(hit)
+			local player = getPlayerFromHit(hit)
+			if player then
+				selectDifficulty(player, difficultyName)
+			end
+		end)
+	end
+
+	local boardPosition = Vector3.new(center.X, 11.5, center.Z + 16 * scale)
 	local board = createPart(
 		arena,
 		"QuizRulesBoard",
@@ -608,8 +794,8 @@ local function installArena(map)
 	)
 	board.CanCollide = false
 	board.CanQuery = false
-	addText(board, Enum.NormalId.Front, "BRAIN QUIZ ARENA\n5 CORRECT = +2 WINS\nMANUAL PERFECT = +3 WINS\nIQ 500+ SMART SOLVE", COLORS.BoardText)
-	addText(board, Enum.NormalId.Back, "STEP ON START\nANSWER ON A / B / C\nHIGHER IQ = FASTER AUTO", COLORS.BoardText)
+	addText(board, Enum.NormalId.Front, "BRAIN QUIZ ARENA\nEVERY CORRECT = +1 WIN\nEASY / NORMAL / HARD\nIQ 500+ SMART SOLVE", COLORS.BoardText)
+	addText(board, Enum.NormalId.Back, "CHOOSE DIFFICULTY\nSTEP ON START\nANSWER ON A / B / C", COLORS.BoardText)
 
 	for _, xOffset in ipairs({ -14 * scale, 14 * scale }) do
 		local post = createPart(
@@ -627,7 +813,7 @@ local function installArena(map)
 
 	installedMap = map
 	map:SetAttribute("BrainQuizArenaInstalled", true)
-	print("[BrainQuizArena] Installed questions=5 timeLimit=60 rewards=2/3 smartSolveIQ=500/2000/10000/35000")
+	print("[BrainQuizArena] Installed goal=5 winPerCorrect=1 difficulties=Easy75/Normal60/Hard45 smartSolveIQ=500/2000/10000/35000")
 end
 
 local function scheduleInstall(map)
@@ -669,4 +855,5 @@ end
 
 Players.PlayerRemoving:Connect(function(player)
 	states[player.UserId] = nil
+	saveStates[player.UserId] = nil
 end)
