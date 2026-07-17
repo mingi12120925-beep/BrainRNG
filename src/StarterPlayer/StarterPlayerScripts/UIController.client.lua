@@ -44,7 +44,6 @@ local AdminTestCommandResult = remotesFolder:WaitForChild("AdminTestCommandResul
 local QuestClaimRequest = remotesFolder:WaitForChild("QuestClaimRequest")
 local ChestOpenRequest = remotesFolder:WaitForChild("ChestOpenRequest")
 local NextAreaRequest = remotesFolder:WaitForChild("NextAreaRequest")
-local ReturnToLobbyRequest = remotesFolder:WaitForChild("ReturnToLobbyRequest")
 local UpdateStats = remotesFolder:WaitForChild("UpdateStats")
 local PopupEvent = remotesFolder:WaitForChild("PopupEvent")
 
@@ -193,7 +192,6 @@ local isChestWorldAnimating = false
 local chestWorldAnimationWarned = false
 local nextAreaWorldStatus = {}
 local nextAreaPromptState = {}
-local area2ReturnPromptState = {}
 local rouletteFrame = nil
 local rouletteTitle = nil
 local rouletteSubtitle = nil
@@ -1623,59 +1621,6 @@ function UISections.connectNextAreaPrompt()
 		if not nextAreaPromptState.ConnectedLogged then
 			nextAreaPromptState.ConnectedLogged = true
 			print("[NextAreaPrompt] Connected")
-		end
-	end)
-end
-
-function UISections.connectArea2ReturnPrompt()
-	task.spawn(function()
-		local prompt = nil
-		local deadline = os.clock() + 8
-
-		while os.clock() < deadline and not prompt do
-			local simpleMap = Workspace:FindFirstChild("SimpleMap")
-			local previewZone = simpleMap and simpleMap:FindFirstChild("Area2PreviewZone")
-			local promptPart = previewZone and previewZone:FindFirstChild("Area2ReturnPromptPart")
-
-			prompt = promptPart and promptPart:FindFirstChild("Area2ReturnPrompt")
-			if not prompt and previewZone then
-				prompt = previewZone:FindFirstChild("Area2ReturnPrompt", true)
-			end
-
-			if prompt and not prompt:IsA("ProximityPrompt") then
-				prompt = nil
-			end
-
-			if not prompt then
-				task.wait(0.2)
-			end
-		end
-
-		if not prompt then
-			if not area2ReturnPromptState.Warned then
-				area2ReturnPromptState.Warned = true
-				warn("[Area2ReturnPrompt] Missing after retry; request connection skipped.")
-			end
-
-			return
-		end
-
-		if area2ReturnPromptState.Prompt == prompt and area2ReturnPromptState.Connection then
-			return
-		end
-
-		if area2ReturnPromptState.Connection then
-			area2ReturnPromptState.Connection:Disconnect()
-		end
-
-		area2ReturnPromptState.Prompt = prompt
-		area2ReturnPromptState.Connection = prompt.Triggered:Connect(function()
-			ReturnToLobbyRequest:FireServer()
-		end)
-
-		if not area2ReturnPromptState.ConnectedLogged then
-			area2ReturnPromptState.ConnectedLogged = true
-			print("[Area2ReturnPrompt] Connected")
 		end
 	end)
 end
@@ -3254,7 +3199,6 @@ local function buildUI()
 	createTutorialUI()
 	connectQuestNpcPrompt()
 	UISections.connectNextAreaPrompt()
-	UISections.connectArea2ReturnPrompt()
 
 	local function forceUtilityButtonLayout(button, layoutOrder, yOffset)
 		button.Parent = utilityMenuFrame

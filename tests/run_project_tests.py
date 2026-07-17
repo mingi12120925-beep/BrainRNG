@@ -14,19 +14,20 @@ def run(command: list[str]) -> int:
 
 
 def main() -> int:
-	persistence_result = run([sys.executable, "tests/run_persistence_tests.py"])
-	if persistence_result != 0:
-		return persistence_result
+    test_files = [
+        "tests/run_persistence_tests.py",
+        "tests/run_dirty_save_tests.py",
+        "tests/run_loading_tests.py",
+        "tests/run_lobby_map_tests.py",
+        "tests/run_study_simulator_tests.py",
+    ]
 
-	dirty_save_result = run([sys.executable, "tests/run_dirty_save_tests.py"])
-	if dirty_save_result != 0:
-		return dirty_save_result
+    for test_file in test_files:
+        result = run([sys.executable, test_file])
+        if result != 0:
+            return result
 
-	loading_result = run([sys.executable, "tests/run_loading_tests.py"])
-	if loading_result != 0:
-		return loading_result
-
-	return run([sys.executable, "tests/run_lobby_map_tests.py"])
+    return 0
 
 
 if __name__ == "__main__":

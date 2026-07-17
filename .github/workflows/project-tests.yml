@@ -1,0 +1,22 @@
+name: BrainRNG project tests
+
+on:
+  push:
+    branches:
+      - main
+      - agent/classic-simulator-lobby
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run project tests
+        run: python tests/run_project_tests.py

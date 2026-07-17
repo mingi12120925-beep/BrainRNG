@@ -103,6 +103,8 @@ local nextAreaRequestLastAtByUserId = {}
 local returnToLobbyLastAtByUserId = {}
 local worldChestPromptConnection = nil
 local worldChestConnectedPrompt = nil
+local area2ReturnPromptConnection = nil
+local area2ReturnConnectedPrompt = nil
 
 local BRAIN_SURGE_TARGET = 10
 local BRAIN_SURGE_MULTIPLIER = 2
@@ -166,7 +168,7 @@ local function getBrainSurgeStats(player)
 	}
 end
 
-local BASIC_CHEST_COST = 25
+local BASIC_CHEST_COST = 250
 local BASIC_CHEST_REWARDS = {
 	{ Weight = 50, Type = "IQ", Amount = 500, Text = "+500 IQ" },
 	{ Weight = 30, Type = "KP", Amount = 100, Text = "+100 KP" },
@@ -177,9 +179,9 @@ local BASIC_CHEST_REWARDS = {
 local QUEST_DEFINITIONS = {
 	{
 		Id = "Roll_50",
-		Title = "Roll 50 Times",
-		Description = "Roll 50 times.",
-		Goal = 50,
+		Title = "Roll 180 Times",
+		Description = "Roll 180 times.",
+		Goal = 180,
 		Reward = { Type = "KP", Amount = 100 },
 		RewardText = "+100 KP",
 	},
@@ -193,9 +195,9 @@ local QUEST_DEFINITIONS = {
 	},
 	{
 		Id = "Discover_3",
-		Title = "Discover 3 Concepts",
-		Description = "Discover 3 new Concepts.",
-		Goal = 3,
+		Title = "Discover 180 Concepts",
+		Description = "Discover 180 new Concepts.",
+		Goal = 180,
 		Reward = { Type = "KP", Amount = 250 },
 		RewardText = "+250 KP",
 	},
@@ -1478,6 +1480,32 @@ local function connectWorldChestPrompt()
 	end)
 end
 
+local function connectArea2ReturnPrompt()
+	local simpleMap = Workspace:FindFirstChild("SimpleMap")
+	local prompt = simpleMap and simpleMap:FindFirstChild("Area2ReturnPrompt", true)
+
+	if not prompt or not prompt:IsA("ProximityPrompt") then
+		warn("[Area2ReturnPrompt] Server prompt missing; connection skipped.")
+		return
+	end
+
+	if area2ReturnConnectedPrompt == prompt and area2ReturnPromptConnection then
+		return
+	end
+
+	if area2ReturnPromptConnection then
+		area2ReturnPromptConnection:Disconnect()
+		area2ReturnPromptConnection = nil
+	end
+
+	area2ReturnConnectedPrompt = prompt
+	area2ReturnPromptConnection = prompt.Triggered:Connect(function(player)
+		handleReturnToLobbyRequest(player)
+	end)
+
+	print("[Area2ReturnPrompt] Server connected")
+end
+
 local function getAdminSaveState(player)
 	local userId = player.UserId
 	local state = adminSaveStates[userId]
@@ -1960,6 +1988,7 @@ NextAreaRequest.OnServerEvent:Connect(handleNextAreaRequest)
 ReturnToLobbyRequest.OnServerEvent:Connect(handleReturnToLobbyRequest)
 
 task.defer(connectWorldChestPrompt)
+task.defer(connectArea2ReturnPrompt)
 
 local function handlePlayerAdded(player)
 	if playerLoadStarted[player.UserId] then

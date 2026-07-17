@@ -10,6 +10,7 @@ WORLD_BUILDER = ROOT / "src" / "ServerScriptService" / "SimpleWorldBuilder.lua"
 GAME_SERVER = ROOT / "src" / "ServerScriptService" / "GameServer.server.lua"
 DATA_MANAGER = ROOT / "src" / "ServerScriptService" / "DataManager.lua"
 LOADING_CONTROLLER = ROOT / "src" / "StarterPlayer" / "StarterPlayerScripts" / "LoadingController.lua"
+UI_CONTROLLER = ROOT / "src" / "StarterPlayer" / "StarterPlayerScripts" / "UIController.client.lua"
 
 
 class CheckFailure:
@@ -55,6 +56,11 @@ def check_lobby_root_and_folders(builder: str) -> None:
             'folder(map, "World")',
             "folder(world, LOBBY_NAME)",
             'map:SetAttribute("Theme", "Prestige0SchoolLobby")',
+            'map:SetAttribute("MapStyle", "ClassicSimulator")',
+            'map:SetAttribute("LayoutVersion", 5)',
+            'map:SetAttribute("WorldScale", WORLD_SCALE)',
+            'map:SetAttribute("InteractionDistance", PROMPT_DISTANCE)',
+            'map:SetAttribute("GroundStyle", "ExtendedLandscape")',
         ],
     )
 
@@ -70,6 +76,7 @@ def check_lobby_root_and_folders(builder: str) -> None:
         "ShopArea",
         "AttendanceArea",
         "Paths",
+        "Boundary",
         "Decorations",
         "InteractionZones",
         "Debug",
@@ -82,18 +89,25 @@ def check_required_geometry(builder: str) -> None:
         "Main campus geometry",
         builder,
         [
-            '"P0_MainGround", Vector3.new(190, 2, 190), Vector3.new(0, -1, 0)',
-            '"P0_CampusBase", Vector3.new(150, 0.3, 150), Vector3.new(0, 0.15, 0)',
-            '"P0_SpawnPlatform", Vector3.new(38, 1.5, 20), Vector3.new(0, 0.75, -76)',
-            'spawn.Position = Vector3.new(0, 2, -76)',
-            '"P0_RollPlaza_Base", Vector3.new(42, 1.6, 42), Vector3.new(0, 0.8, 0)',
-            '"P0_GatePlatform", Vector3.new(46, 1.6, 28), Vector3.new(0, 0.8, 68)',
-            '"P0_QuestBase", Vector3.new(36, 1.6, 30), Vector3.new(-62, 0.8, 2)',
-            '"P0_ChestBase", Vector3.new(38, 1.6, 30), Vector3.new(62, 0.8, 2)',
-            '"P0_ResearchBase", Vector3.new(48, 1.4, 22), Vector3.new(0, 0.7, -52)',
-            '"P0_RankingBase", Vector3.new(34, 1.2, 18), Vector3.new(-65, 0.6, -50)',
-            '"P0_ShopBase", Vector3.new(28, 1.2, 18), Vector3.new(65, 0.6, -50)',
-            '"P0_AttendanceBase", Vector3.new(16, 1, 12), Vector3.new(25, 0.5, -68)',
+            "local WORLD_SCALE = 2.5",
+            "local PROMPT_DISTANCE = 18",
+            '"P0_WorldTerrainMass", Vector3.new(380, 20, 400), Vector3.new(0, -11, 0)',
+            '"P0_GrassField_Core", Vector3.new(374, 1.6, 394), Vector3.new(0, -0.8, 0)',
+            '"P0_OuterLand_West", Vector3.new(58, 4, 250), Vector3.new(-128, 0.6, 8)',
+            '"P0_OuterLand_North", Vector3.new(246, 5.5, 72), Vector3.new(0, 1, 127)',
+            '"P0_DistantLandscape_"',
+            '"P0_MainPath", Vector3.new(18, 0.4, 146), Vector3.new(0, 0.2, -5)',
+            '"P0_CentralPlaza", Vector3.new(0.6, 64, 64), Vector3.new(0, 0.3, -6)',
+            '"P0_SpawnPlatform", Vector3.new(22, 0.6, 14), Vector3.new(0, 0.3, -78)',
+            'spawn.Position = worldVector(Vector3.new(0, 2, -78))',
+            '"P0_School_MainBody", Vector3.new(60, 22, 20), Vector3.new(0, 11, 79)',
+            '"P0_QuestBooth_Floor", Vector3.new(24, 0.8, 18), Vector3.new(-47, 0.4, -6)',
+            '"P0_ChestBooth_Floor", Vector3.new(24, 0.8, 18), Vector3.new(47, 0.4, -6)',
+            '"P0_ResearchKiosk_Base", Vector3.new(22, 0.8, 14), Vector3.new(-54, 0.4, -55)',
+            '"P0_RankingBase", Vector3.new(20, 0.8, 12), Vector3.new(-67, 0.4, 39)',
+            '"P0_ShopBase", Vector3.new(20, 0.8, 16), Vector3.new(66, 0.4, 38)',
+            '"P0_AttendanceBase", Vector3.new(18, 0.8, 12), Vector3.new(48, 0.4, -61)',
+            '"P0_BoundaryNorth", Vector3.new(180, 24, 2), Vector3.new(0, 12, 90)',
         ],
     )
 
@@ -129,6 +143,34 @@ def check_functional_names(builder: str, game_server: str) -> None:
         ],
     )
 
+
+def check_streaming_safe_area2_return_prompt(game_server: str, ui_controller: str) -> None:
+    require_contains(
+        "Server-owned Area 2 return prompt",
+        game_server,
+        [
+            "local function connectArea2ReturnPrompt()",
+            'simpleMap:FindFirstChild("Area2ReturnPrompt", true)',
+            "area2ReturnPromptConnection = prompt.Triggered:Connect(function(player)",
+            "handleReturnToLobbyRequest(player)",
+            "task.defer(connectArea2ReturnPrompt)",
+            'print("[Area2ReturnPrompt] Server connected")',
+        ],
+        GAME_SERVER,
+    )
+
+    for forbidden_client_lookup in [
+        'local ReturnToLobbyRequest = remotesFolder:WaitForChild("ReturnToLobbyRequest")',
+        "UISections.connectArea2ReturnPrompt()",
+        "[Area2ReturnPrompt] Missing after retry",
+    ]:
+        if forbidden_client_lookup in ui_controller:
+            fail(
+                "Streaming-safe Area 2 return prompt",
+                f"UIController should not depend on the distant streamed prompt: {forbidden_client_lookup!r}.",
+                UI_CONTROLLER,
+            )
+
     require_contains(
         "Existing server lookup names",
         game_server,
@@ -147,7 +189,6 @@ def check_visual_policy(builder: str) -> None:
         "School visual labels",
         builder,
         [
-            '"BRAIN RNG SCHOOL"',
             "ROLL IQ",
             "TAP TO GROW",
             '"P0_RollPedestal_FixedSign"',
@@ -162,6 +203,7 @@ def check_visual_policy(builder: str) -> None:
             '"P0_GateFixedSign"',
             '"P0_Area2ReturnFixedSign"',
             '"RETURN TO LOBBY"',
+            '"ClassicSimulator"',
         ],
     )
 
@@ -173,6 +215,13 @@ def check_visual_policy(builder: str) -> None:
         '"LegacyZone3"',
         '"ZONE 2 ARCHIVE"',
         '"ZONE 3 ARCHIVE"',
+        '"P0_CampusBase"',
+        '"P0_RollPlaza_Base"',
+        '"P0_GatePlatform"',
+        '"P0_SpawnArch_Left"',
+        '"P0_GateSchoolPreview"',
+        '"P0_MainGround"',
+        '"P0_WorldTerrainMass", Vector3.new(380, 20, 400), Vector3.new(0, -10, 0)',
     ]
     found = [needle for needle in forbidden if needle in builder]
     if found:
@@ -207,6 +256,7 @@ def check_visual_policy(builder: str) -> None:
         "Prompts retained",
         builder,
         [
+            "item.MaxActivationDistance = PROMPT_DISTANCE",
             '"QuestOpenPrompt"',
             '"ChestOpenPrompt"',
             '"NextAreaPrompt"',
@@ -220,12 +270,12 @@ def check_lighting_and_performance(builder: str) -> None:
         "Lighting values",
         builder,
         [
-            "Lighting.ClockTime = 14",
+            "Lighting.ClockTime = 13.5",
             "Lighting.Brightness = 2.2",
             "Lighting.GlobalShadows = true",
             "Lighting.ShadowSoftness = 0.35",
-            "Lighting.Ambient = Color3.fromRGB(120, 125, 135)",
-            "Lighting.OutdoorAmbient = Color3.fromRGB(150, 155, 165)",
+            "Lighting.Ambient = Color3.fromRGB(128, 137, 150)",
+            "Lighting.OutdoorAmbient = Color3.fromRGB(170, 180, 190)",
             "Lighting.EnvironmentDiffuseScale = 0.35",
             "Lighting.EnvironmentSpecularScale = 0.25",
             "atmosphere.Density = 0.18",
@@ -268,10 +318,12 @@ def main() -> int:
     game_server = read_text(GAME_SERVER)
     data_manager = read_text(DATA_MANAGER)
     loading_controller = read_text(LOADING_CONTROLLER)
+    ui_controller = read_text(UI_CONTROLLER)
 
     check_lobby_root_and_folders(builder)
     check_required_geometry(builder)
     check_functional_names(builder, game_server)
+    check_streaming_safe_area2_return_prompt(game_server, ui_controller)
     check_visual_policy(builder)
     check_lighting_and_performance(builder)
     check_existing_systems(data_manager, loading_controller, game_server)
