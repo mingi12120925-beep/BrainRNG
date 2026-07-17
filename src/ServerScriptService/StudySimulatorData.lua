@@ -15,6 +15,7 @@ if sessionId == "" then
 end
 
 local LOCK_TIMEOUT_SECONDS = 300
+local LOCK_REFRESH_SECONDS = 120
 local RETRY_COUNT = 3
 local RETRY_DELAY = 1.5
 
@@ -187,6 +188,8 @@ function StudySimulatorData.Load(player)
 		Data = loaded,
 		Dirty = false,
 		Saving = false,
+		Revision = 0,
+		LastPersistedAt = now(),
 	}
 
 	return true, loaded
@@ -206,6 +209,7 @@ function StudySimulatorData.MarkDirty(player)
 	local profile = profiles[player.UserId]
 	if profile then
 		profile.Dirty = true
+		profile.Revision += 1
 	end
 end
 
@@ -224,11 +228,13 @@ function StudySimulatorData.Save(player, force)
 		return false, "SAVE_IN_PROGRESS"
 	end
 
-	if not force and not profile.Dirty then
+	local heartbeatDue = now() - (tonumber(profile.LastPersistedAt) or 0) >= LOCK_REFRESH_SECONDS
+	if not force and not profile.Dirty and not heartbeatDue then
 		return true
 	end
 
 	profile.Saving = true
+	local saveRevision = profile.Revision
 	local snapshot = cloneData(profile.Data)
 	snapshot.LastSeenTime = now()
 	applyLock(snapshot)
@@ -257,7 +263,12 @@ function StudySimulatorData.Save(player, force)
 
 	profile.Data.LastSeenTime = snapshot.LastSeenTime
 	profile.Data.SessionLock = snapshot.SessionLock
-	profile.Dirty = false
+	profile.LastPersistedAt = now()
+	if profile.Revision == saveRevision then
+		profile.Dirty = false
+	else
+		profile.Dirty = true
+	end
 	return true
 end
 
@@ -267,19 +278,28 @@ function StudySimulatorData.Release(player)
 		return true
 	end
 
-	StudySimulatorData.Save(player, true)
+	local saveSuccess, saveError = StudySimulatorData.Save(player, true)
+	if not saveSuccess then
+		warn("[StudyData] Pre-release save failed", player.Name, saveError)
+	end
+
 	local snapshot = cloneData(profile.Data)
 	snapshot.LastSeenTime = now()
 	snapshot.SessionLock = nil
+	local lockLost = false
 
 	local success, result = updateWithRetry(keyFor(player), function(oldData)
 		if oldData ~= nil and not ownsLock(oldData) and not isLockExpired(oldData.SessionLock) then
+			lockLost = true
 			return oldData
 		end
 		return cloneData(snapshot)
 	end)
 
 	profiles[player.UserId] = nil
+	if lockLost then
+		return false, "LOCK_LOST"
+	end
 	return success, result
 end
 
@@ -293,6 +313,7 @@ function StudySimulatorData.Reset(player)
 	applyLock(reset)
 	profile.Data = reset
 	profile.Dirty = true
+	profile.Revision += 1
 	return true, reset
 end
 
