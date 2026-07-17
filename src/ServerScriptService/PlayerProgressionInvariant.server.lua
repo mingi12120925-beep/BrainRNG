@@ -3,7 +3,7 @@
 
 local Players = game:GetService("Players")
 
-local FIXED_WALK_SPEED = 40
+local FIXED_WALK_SPEED = 24
 local FIXED_JUMP_POWER = 50
 local FIXED_JUMP_HEIGHT = 7.2
 local SCALE_NAMES = {
@@ -81,7 +81,7 @@ local function guardCharacter(player, character)
 
 	player:SetAttribute("ProgressionMovementLocked", true)
 	player:SetAttribute("ProgressionAvatarScaleLocked", true)
-	print("[PlayerProgressionInvariant] Installed player=" .. player.Name .. " walkSpeed=40 statDrivenTransform=disabled")
+	print("[PlayerProgressionInvariant] Installed player=" .. player.Name .. " walkSpeed=24 statDrivenTransform=disabled")
 end
 
 local function bindPlayer(player)
@@ -98,4 +98,4 @@ for _, player in ipairs(Players:GetPlayers()) do
 	bindPlayer(player)
 end
 
-print("[PlayerProgressionInvariant] Ready fixedWalkSpeed=40")
+print("[PlayerProgressionInvariant] Ready fixedWalkSpeed=24")
